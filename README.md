@@ -23,8 +23,8 @@ Planned features for the next releases (sorted after priority):
 
 `v0.2.0`: a few more commands
 
-- [ ] normal mode motions: `0`, `$`
-- [ ] delete commands in normal mode: `x`, `D`
+- [x] normal mode motions: `0`, `$`
+- [x] delete commands in normal mode: `x`, `D`
 - [x] more ways to enter insert mode: `a`, `A`, `o`, `O`
 
 `v0.1.0`: first mvp
