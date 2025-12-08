@@ -77,3 +77,17 @@ test("redo stack is cleared after a new edit", () => {
   simulateKeys(controller, [{ key: "r", ctrl: true }]);
   expect(controller.extractContent()).toBe("?Hello");
 });
+
+test("undo treats one insert session as a single action", () => {
+  const controller = makeController("Hello");
+  simulateKeys(controller, [{ key: "i" }, { text: "abc" }, { key: "Escape" }]);
+  expect(controller.extractContent()).toBe("abcHello");
+
+  simulateKeys(controller, [{ key: "u" }]);
+  expect(controller.extractContent()).toBe("Hello");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 0 });
+
+  simulateKeys(controller, [{ key: "r", ctrl: true }]);
+  expect(controller.extractContent()).toBe("abcHello");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
+});

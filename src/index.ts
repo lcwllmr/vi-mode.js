@@ -215,6 +215,7 @@ class KeyMapper {
 class UndoManager {
   private undoStack: EditorSnapshot[] = [];
   private redoStack: EditorSnapshot[] = [];
+  private pendingSnapshot: EditorSnapshot | null = null;
 
   public createSnapshot(state: EditorState): EditorSnapshot {
     return {
@@ -233,6 +234,22 @@ class UndoManager {
       this.undoStack.push(previousSnapshot);
       this.redoStack = [];
     }
+  }
+
+  public beginCompound(state: EditorState): void {
+    if (!this.pendingSnapshot) {
+      this.pendingSnapshot = this.createSnapshot(state);
+    }
+  }
+
+  public commitCompoundIfChanged(state: EditorState): void {
+    if (!this.pendingSnapshot) return;
+    this.recordChange(this.pendingSnapshot, state);
+    this.pendingSnapshot = null;
+  }
+
+  public hasPendingCompound(): boolean {
+    return this.pendingSnapshot !== null;
   }
 
   public undo(state: EditorState): boolean {
@@ -501,12 +518,30 @@ export class ViModeController {
   public processKeyboardEvent(event: KeyboardEvent) {
     const command = this.keyMapper.resolve(this.state, event);
     if (command) {
+      const wasInsertMode = this.state.mode === "insert";
+
+      if (this.shouldStartInsertSession(event)) {
+        this.undoManager.beginCompound(this.state);
+      }
+
       const isUndo = command === this.undoCommand;
       const isRedo = command === this.redoCommand;
-      this.executor.run(command, event, { recordUndo: !isUndo && !isRedo });
+      const recordUndo =
+        !isUndo && !isRedo && !this.undoManager.hasPendingCompound();
+
+      this.executor.run(command, event, { recordUndo });
+
+      if (wasInsertMode && this.state.mode === "normal") {
+        this.undoManager.commitCompoundIfChanged(this.state);
+      }
     }
     this.state.cursor.clampToBuffer(this.state.buffer);
     this.updateCursorSpan();
+  }
+
+  private shouldStartInsertSession(event: KeyboardEvent): boolean {
+    if (this.state.mode !== "normal") return false;
+    return ["i", "a", "A", "o", "O"].includes(event.key);
   }
 
   private updateCursorSpan() {
