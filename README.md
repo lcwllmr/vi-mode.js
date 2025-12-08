@@ -28,8 +28,8 @@ Planned features for upcoming releases:
 `v0.3.0`: architecture overhaul
 
 - [x] separate motions and edit actions from keymap and buffer
-- [ ] undo/redo stack via `[n]u` and `[n]Ctrl+r`
-- [ ] composed actions `dd`, `d[motion]`, `[n]hjkl`
+- [x] undo/redo stack via `[n]u` and `[n]Ctrl+r`
+- [x] composed actions `dd`, `d[motion]`, `[n]hjkl`
 
 `v0.2.1`: tiny fixes
 
