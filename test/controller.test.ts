@@ -193,9 +193,15 @@ test("tab key inserts spaces", () => {
 });
 
 test("single character deletions in normal mode", () => {
-  const controller = makeTestSetup("ABCDE", "normal", 0, 3);
+  const controller = makeTestSetup("ABCDE\nF", "normal", 0, 3);
   simulateKeys(controller, [{ key: "x" }]);
-  expect(controller.extractContent()).toBe("ABCE");
+  expect(controller.extractContent()).toBe("ABCE\nF");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
+  simulateKeys(controller, [{ key: "x" }]);
+  expect(controller.extractContent()).toBe("ABC\nF");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
+  simulateKeys(controller, [{ key: "x" }]);
+  expect(controller.extractContent()).toBe("ABCF");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
   simulateKeys(controller, [{ key: "x" }]);
   expect(controller.extractContent()).toBe("ABC");

@@ -146,13 +146,22 @@ export class ViModeController {
           this.cursorPosition.row
         ] as HTMLDivElement;
         const text = lineDiv.textContent || "";
-        lineDiv.textContent =
-          text.slice(0, this.cursorPosition.col) +
-          text.slice(this.cursorPosition.col + 1);
-        this.cursorPosition.col = Math.min(
-          this.cursorPosition.col,
-          lineDiv.textContent.length,
-        );
+        const lineCount = this.contentDiv.children.length;
+        if (this.cursorPosition.col < text.length) {
+          lineDiv.textContent =
+            text.slice(0, this.cursorPosition.col) +
+            text.slice(this.cursorPosition.col + 1);
+        } else if (
+          this.cursorPosition.col === text.length &&
+          this.cursorPosition.row < lineCount - 1
+        ) {
+          const nextLineDiv = this.contentDiv.children[
+            this.cursorPosition.row + 1
+          ] as HTMLDivElement;
+          const nextText = nextLineDiv.textContent || "";
+          lineDiv.textContent = text + nextText;
+          this.contentDiv.removeChild(nextLineDiv);
+        }
       } else if (event.key === "D") {
         const lineDiv = this.contentDiv.children[
           this.cursorPosition.row
