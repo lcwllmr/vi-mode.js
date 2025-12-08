@@ -13,13 +13,28 @@ npm run test:watch # runs unit tests in watch mode
 
 ## Roadmap and Changelog
 
-Planned features for the next releases (sorted after priority):
+Planned features for upcoming releases:
 
-- undo/redo stack
-- visual mode
 - deal with horizontal and vertical scrolling
 - configuration options (like colors and tab size)
-- registers (as reusable object) and clipboard support
+
+`v0.4.0`: visual mode
+
+- [ ] visual mode via `v` and `V` with all motions we have so far
+- [ ] external register store (reusable across sessions)
+- [ ] yank and paste commands in normal (`yy`, `y[motion]`, `p`, `P`) and visual mode (`y`)
+- [ ] system clipboard support
+
+`v0.3.0`: architecture overhaul
+
+- [ ] separate motions and edit actions from keymap and buffer
+- [ ] undo/redo stack via `u` and `U`
+- [ ] composed actions `dd`, `d[motion]`, `[n]hjkl`
+
+`v0.2.1`: tiny fixes
+
+- [ ] fix behavior of `x` at end of line
+- [ ] apply thorough linting
 
 `v0.2.0`: a few more commands
 
