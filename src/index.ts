@@ -1,5 +1,8 @@
 export type Mode = "insert" | "normal";
-export type CursorPosition = { row: number; col: number };
+export interface CursorPosition {
+  row: number;
+  col: number;
+}
 
 export class ViModeController {
   private document: Document;
@@ -11,10 +14,10 @@ export class ViModeController {
 
   constructor(
     container: HTMLDivElement,
-    initialContent: string = "",
+    initialContent = "",
     initialMode: Mode = "normal",
-    initialCursorRow: number = 0,
-    initialCursorCol: number = 0,
+    initialCursorRow = 0,
+    initialCursorCol = 0,
   ) {
     this.document = container.ownerDocument;
     this.textareaDiv = container.appendChild(
@@ -61,9 +64,8 @@ export class ViModeController {
 
   public extractContent(): string {
     const lines: string[] = [];
-    for (let i = 0; i < this.contentDiv.children.length; i++) {
-      const lineDiv = this.contentDiv.children[i] as HTMLDivElement;
-      lines.push(lineDiv.textContent || "");
+    for (const lineDiv of this.contentDiv.children) {
+      lines.push((lineDiv as HTMLDivElement).textContent || "");
     }
     return lines.join("\n");
   }

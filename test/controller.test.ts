@@ -7,7 +7,7 @@ function makeTestSetup(
   initialMode: "insert" | "normal",
   initialCursorRow: number,
   initialCursorCol: number,
-): [Document, ViModeController] {
+): ViModeController {
   const dom = new JSDOM(`<!DOCTYPE html><body><div id="editor"></div></body>`);
   const editorDiv = dom.window.document.getElementById(
     "editor",
@@ -19,19 +19,20 @@ function makeTestSetup(
     initialCursorRow,
     initialCursorCol,
   );
-  return [dom.window.document, controller];
+  return controller;
+}
+
+interface FakeKeyboardEvent {
+  key?: string;
+  ctrl?: boolean;
+  alt?: boolean;
+  meta?: boolean;
+  text?: string;
 }
 
 function simulateKeys(
-  document: Document,
   controller: ViModeController,
-  keySeq: Array<{
-    key?: string;
-    ctrl?: boolean;
-    alt?: boolean;
-    meta?: boolean;
-    text?: string;
-  }>,
+  keySeq: FakeKeyboardEvent[],
 ) {
   for (const keyEvent of keySeq) {
     if (keyEvent.key) {
@@ -58,20 +59,20 @@ function simulateKeys(
 }
 
 test("extract content returns the correct text", () => {
-  const [_, controller] = makeTestSetup("\nAAA\nBBB\n", "normal", 0, 0);
+  const controller = makeTestSetup("\nAAA\nBBB\n", "normal", 0, 0);
   const content = controller.extractContent();
   expect(content).toBe("\nAAA\nBBB\n");
 });
 
 test("cursor position is clamped correctly", () => {
-  const [_, controller] = makeTestSetup("AAA\nBBB\nCCC", "normal", 100, 100);
+  const controller = makeTestSetup("AAA\nBBB\nCCC", "normal", 100, 100);
   const cursorPos = controller.getCursorPosition();
   expect(cursorPos).toEqual({ row: 2, col: 3 });
 });
 
 test("cursor movement in normal mode", () => {
-  const [document, controller] = makeTestSetup("ABC\nDEF\nGHI", "normal", 0, 0);
-  simulateKeys(document, controller, [
+  const controller = makeTestSetup("ABC\nDEF\nGHI", "normal", 0, 0);
+  simulateKeys(controller, [
     { key: "j" },
     { key: "j" },
     { key: "l" },
@@ -84,48 +85,44 @@ test("cursor movement in normal mode", () => {
 });
 
 test("cursor movement to line ends in normal mode", () => {
-  const [document, controller] = makeTestSetup("ABCD\nEFGH\n", "normal", 1, 1);
-  simulateKeys(document, controller, [{ key: "0" }]);
+  const controller = makeTestSetup("ABCD\nEFGH\n", "normal", 1, 1);
+  simulateKeys(controller, [{ key: "0" }]);
   expect(controller.getCursorPosition()).toEqual({ row: 1, col: 0 });
-  simulateKeys(document, controller, [{ key: "$" }]);
+  simulateKeys(controller, [{ key: "$" }]);
   expect(controller.getCursorPosition()).toEqual({ row: 1, col: 4 });
 });
 
 test("mode switching works correctly", () => {
-  const [document, controller] = makeTestSetup("ABC", "normal", 0, 0);
+  const controller = makeTestSetup("ABC", "normal", 0, 0);
   expect(controller.getMode()).toBe("normal");
 
-  simulateKeys(document, controller, [{ key: "i" }]);
+  simulateKeys(controller, [{ key: "i" }]);
   expect(controller.getMode()).toBe("insert");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 0 });
-  simulateKeys(document, controller, [{ key: "Escape" }]);
+  simulateKeys(controller, [{ key: "Escape" }]);
   expect(controller.getMode()).toBe("normal");
 
-  simulateKeys(document, controller, [{ key: "a" }]);
+  simulateKeys(controller, [{ key: "a" }]);
   expect(controller.getMode()).toBe("insert");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 1 });
-  simulateKeys(document, controller, [{ key: "Escape" }]);
+  simulateKeys(controller, [{ key: "Escape" }]);
   expect(controller.getMode()).toBe("normal");
 
-  simulateKeys(document, controller, [{ key: "A" }]);
+  simulateKeys(controller, [{ key: "A" }]);
   expect(controller.getMode()).toBe("insert");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
-  simulateKeys(document, controller, [{ key: "Escape" }]);
+  simulateKeys(controller, [{ key: "Escape" }]);
   expect(controller.getMode()).toBe("normal");
 });
 
 test("opening new lines in normal mode", () => {
-  const [document, controller] = makeTestSetup("ABC", "normal", 0, 1);
-  simulateKeys(document, controller, [{ key: "o" }]);
+  const controller = makeTestSetup("ABC", "normal", 0, 1);
+  simulateKeys(controller, [{ key: "o" }]);
   let content = controller.extractContent();
   expect(content).toBe("ABC\n");
   let cursorPos = controller.getCursorPosition();
   expect(cursorPos).toEqual({ row: 1, col: 0 });
-  simulateKeys(document, controller, [
-    { key: "Escape" },
-    { key: "k" },
-    { key: "O" },
-  ]);
+  simulateKeys(controller, [{ key: "Escape" }, { key: "k" }, { key: "O" }]);
   content = controller.extractContent();
   expect(content).toBe("\nABC\n");
   cursorPos = controller.getCursorPosition();
@@ -133,8 +130,8 @@ test("opening new lines in normal mode", () => {
 });
 
 test("insertion of text in insert mode", () => {
-  const [document, controller] = makeTestSetup("AC", "insert", 0, 1);
-  simulateKeys(document, controller, [{ text: " B " }]);
+  const controller = makeTestSetup("AC", "insert", 0, 1);
+  simulateKeys(controller, [{ text: " B " }]);
   const content = controller.extractContent();
   expect(content).toBe("A B C");
   const cursorPos = controller.getCursorPosition();
@@ -142,11 +139,8 @@ test("insertion of text in insert mode", () => {
 });
 
 test("backspace removes characters", () => {
-  const [document, controller] = makeTestSetup("ABCD", "insert", 0, 4);
-  simulateKeys(document, controller, [
-    { key: "Backspace" },
-    { key: "Backspace" },
-  ]);
+  const controller = makeTestSetup("ABCD", "insert", 0, 4);
+  simulateKeys(controller, [{ key: "Backspace" }, { key: "Backspace" }]);
   const content = controller.extractContent();
   expect(content).toBe("AB");
   const cursorPos = controller.getCursorPosition();
@@ -154,8 +148,8 @@ test("backspace removes characters", () => {
 });
 
 test("backspace at start of line merges lines", () => {
-  const [document, controller] = makeTestSetup("Hello\nWorld", "insert", 1, 0);
-  simulateKeys(document, controller, [{ key: "Backspace" }]);
+  const controller = makeTestSetup("Hello\nWorld", "insert", 1, 0);
+  simulateKeys(controller, [{ key: "Backspace" }]);
   const content = controller.extractContent();
   expect(content).toBe("HelloWorld");
   const cursorPos = controller.getCursorPosition();
@@ -163,8 +157,8 @@ test("backspace at start of line merges lines", () => {
 });
 
 test("backspace at start of first line does nothing", () => {
-  const [document, controller] = makeTestSetup("Hello", "insert", 0, 0);
-  simulateKeys(document, controller, [{ key: "Backspace" }]);
+  const controller = makeTestSetup("Hello", "insert", 0, 0);
+  simulateKeys(controller, [{ key: "Backspace" }]);
   const content = controller.extractContent();
   expect(content).toBe("Hello");
   const cursorPos = controller.getCursorPosition();
@@ -172,8 +166,8 @@ test("backspace at start of first line does nothing", () => {
 });
 
 test("enter key splits lines correctly", () => {
-  const [document, controller] = makeTestSetup("HelloWorld", "insert", 0, 5);
-  simulateKeys(document, controller, [{ key: "Enter" }]);
+  const controller = makeTestSetup("HelloWorld", "insert", 0, 5);
+  simulateKeys(controller, [{ key: "Enter" }]);
   const content = controller.extractContent();
   expect(content).toBe("Hello\nWorld");
   const cursorPos = controller.getCursorPosition();
@@ -181,8 +175,8 @@ test("enter key splits lines correctly", () => {
 });
 
 test("delete key removes characters", () => {
-  const [document, controller] = makeTestSetup("HelloWorld", "insert", 0, 5);
-  simulateKeys(document, controller, [{ key: "Delete" }, { key: "Delete" }]);
+  const controller = makeTestSetup("HelloWorld", "insert", 0, 5);
+  simulateKeys(controller, [{ key: "Delete" }, { key: "Delete" }]);
   const content = controller.extractContent();
   expect(content).toBe("Hellorld");
   const cursorPos = controller.getCursorPosition();
@@ -190,8 +184,8 @@ test("delete key removes characters", () => {
 });
 
 test("tab key inserts spaces", () => {
-  const [document, controller] = makeTestSetup("HelloWorld", "insert", 0, 5);
-  simulateKeys(document, controller, [{ key: "Tab" }]);
+  const controller = makeTestSetup("HelloWorld", "insert", 0, 5);
+  simulateKeys(controller, [{ key: "Tab" }]);
   const content = controller.extractContent();
   expect(content).toBe("Hello    World");
   const cursorPos = controller.getCursorPosition();
@@ -199,24 +193,24 @@ test("tab key inserts spaces", () => {
 });
 
 test("single character deletions in normal mode", () => {
-  const [document, controller] = makeTestSetup("ABCDE", "normal", 0, 3);
-  simulateKeys(document, controller, [{ key: "x" }]);
+  const controller = makeTestSetup("ABCDE", "normal", 0, 3);
+  simulateKeys(controller, [{ key: "x" }]);
   expect(controller.extractContent()).toBe("ABCE");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
-  simulateKeys(document, controller, [{ key: "x" }]);
+  simulateKeys(controller, [{ key: "x" }]);
   expect(controller.extractContent()).toBe("ABC");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
-  simulateKeys(document, controller, [{ key: "x" }]);
+  simulateKeys(controller, [{ key: "x" }]);
   expect(controller.extractContent()).toBe("ABC");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
 });
 
 test("deleting to end of line in normal mode", () => {
-  const [document, controller] = makeTestSetup("01234", "normal", 0, 2);
-  simulateKeys(document, controller, [{ key: "D" }]);
+  const controller = makeTestSetup("01234", "normal", 0, 2);
+  simulateKeys(controller, [{ key: "D" }]);
   expect(controller.extractContent()).toBe("01");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 2 });
-  simulateKeys(document, controller, [{ key: "D" }]);
+  simulateKeys(controller, [{ key: "D" }]);
   expect(controller.extractContent()).toBe("01");
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 2 });
 });
