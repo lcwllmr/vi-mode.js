@@ -83,6 +83,14 @@ test("d$ deletes from the cursor through the end of the line", () => {
   expect(controller.getCursorPosition()).toEqual({ row: 0, col: 2 });
 });
 
+test("d$ deletes last character when already at end of line", () => {
+  const controller = makeController("xyz");
+  simulateKeys(controller, [{ key: "$" }]);
+  simulateKeys(controller, [{ key: "d" }, { key: "$" }]);
+  expect(controller.extractContent()).toBe("xy");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 2 });
+});
+
 test("dd removes the current line and keeps the row index", () => {
   const controller = makeController("first\nsecond\nthird");
   simulateKeys(controller, [{ key: "j" }, { key: "d" }, { key: "d" }]);

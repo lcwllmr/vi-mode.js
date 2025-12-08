@@ -588,16 +588,19 @@ const createMotions = (): Map<string, MotionDefinition> => {
     key: "$",
     move: (state) => {
       const { row } = state.cursor.getPosition();
+      const lineLength = state.buffer.getLineLength(row);
       state.cursor.setPosition(
         row,
-        state.buffer.getLineLength(row),
+        lineLength === 0 ? 0 : lineLength - 1,
         state.buffer,
       );
     },
     toRange: (state) => {
       const { row, col } = state.cursor.getPosition();
       const lineLength = state.buffer.getLineLength(row);
-      return { type: "character", row, startCol: col, endCol: lineLength };
+      const safeCol =
+        lineLength === 0 ? 0 : Math.min(col, Math.max(0, lineLength - 1));
+      return { type: "character", row, startCol: safeCol, endCol: lineLength };
     },
   });
 

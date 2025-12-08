@@ -89,7 +89,7 @@ test("cursor movement to line ends in normal mode", () => {
   simulateKeys(controller, [{ key: "0" }]);
   expect(controller.getCursorPosition()).toEqual({ row: 1, col: 0 });
   simulateKeys(controller, [{ key: "$" }]);
-  expect(controller.getCursorPosition()).toEqual({ row: 1, col: 4 });
+  expect(controller.getCursorPosition()).toEqual({ row: 1, col: 3 });
 });
 
 test("mode switching works correctly", () => {
