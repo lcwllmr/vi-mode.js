@@ -5,7 +5,10 @@ Setup for local development: clone the repo and `cd` into it, then run:
 ```bash
 npm ci
 npx simple-git-hooks
+
+# dev commands
 npm run dev # starts local dev server for live demo
+npm run test:watch # runs unit tests in watch mode
 ```
 
 ## Roadmap and Changelog
@@ -18,11 +21,11 @@ Planned features for the next releases (sorted after priority):
 - configuration options (like colors and tab size)
 - registers (as reusable object) and clipboard support
 
-`v0.2.0`: more features
+`v0.2.0`: a few more commands
 
-- [ ] normal mode motions: `0`, `$`, and `[n]hjkl`
-- [ ] delete commands in normal mode: `x`, `dd` and `d[motion]`
-- [ ] more ways to enter insert mode: `a`, `A`, `o`, `O`
+- [ ] normal mode motions: `0`, `$`
+- [ ] delete commands in normal mode: `x`, `D`
+- [x] more ways to enter insert mode: `a`, `A`, `o`, `O`
 
 `v0.1.0`: first mvp
 
