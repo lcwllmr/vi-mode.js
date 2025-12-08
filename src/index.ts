@@ -100,6 +100,38 @@ export class ViModeController {
     if (this.mode === "normal") {
       if (event.key === "i") {
         this.mode = "insert";
+      } else if (event.key === "a") {
+        const lineLength =
+          (this.contentDiv.children[this.cursorPosition.row] as HTMLDivElement)
+            .textContent?.length || 0;
+        this.cursorPosition.col = Math.min(
+          lineLength,
+          this.cursorPosition.col + 1,
+        );
+        this.mode = "insert";
+      } else if (event.key === "A") {
+        const lineLength =
+          (this.contentDiv.children[this.cursorPosition.row] as HTMLDivElement)
+            .textContent?.length || 0;
+        this.cursorPosition.col = lineLength;
+        this.mode = "insert";
+      } else if (event.key === "o") {
+        const lineDiv = this.contentDiv.children[
+          this.cursorPosition.row
+        ] as HTMLDivElement;
+        const newLineDiv = this.makeNewLineDiv("");
+        this.contentDiv.insertBefore(newLineDiv, lineDiv.nextSibling);
+        this.cursorPosition.row += 1;
+        this.cursorPosition.col = 0;
+        this.mode = "insert";
+      } else if (event.key === "O") {
+        const lineDiv = this.contentDiv.children[
+          this.cursorPosition.row
+        ] as HTMLDivElement;
+        const newLineDiv = this.makeNewLineDiv("");
+        this.contentDiv.insertBefore(newLineDiv, lineDiv);
+        this.cursorPosition.col = 0;
+        this.mode = "insert";
       } else if (event.key === "h") {
         this.cursorPosition.col = Math.max(0, this.cursorPosition.col - 1);
       } else if (event.key === "l") {

@@ -86,10 +86,42 @@ test("cursor movement in normal mode", () => {
 test("mode switching works correctly", () => {
   const [document, controller] = makeTestSetup("ABC", "normal", 0, 0);
   expect(controller.getMode()).toBe("normal");
+
   simulateKeys(document, controller, [{ key: "i" }]);
   expect(controller.getMode()).toBe("insert");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 0 });
   simulateKeys(document, controller, [{ key: "Escape" }]);
   expect(controller.getMode()).toBe("normal");
+
+  simulateKeys(document, controller, [{ key: "a" }]);
+  expect(controller.getMode()).toBe("insert");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 1 });
+  simulateKeys(document, controller, [{ key: "Escape" }]);
+  expect(controller.getMode()).toBe("normal");
+
+  simulateKeys(document, controller, [{ key: "A" }]);
+  expect(controller.getMode()).toBe("insert");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
+  simulateKeys(document, controller, [{ key: "Escape" }]);
+  expect(controller.getMode()).toBe("normal");
+});
+
+test("opening new lines in normal mode", () => {
+  const [document, controller] = makeTestSetup("ABC", "normal", 0, 1);
+  simulateKeys(document, controller, [{ key: "o" }]);
+  let content = controller.extractContent();
+  expect(content).toBe("ABC\n");
+  let cursorPos = controller.getCursorPosition();
+  expect(cursorPos).toEqual({ row: 1, col: 0 });
+  simulateKeys(document, controller, [
+    { key: "Escape" },
+    { key: "k" },
+    { key: "O" },
+  ]);
+  content = controller.extractContent();
+  expect(content).toBe("\nABC\n");
+  cursorPos = controller.getCursorPosition();
+  expect(cursorPos).toEqual({ row: 0, col: 0 });
 });
 
 test("insertion of text in insert mode", () => {
