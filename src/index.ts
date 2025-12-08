@@ -132,6 +132,31 @@ export class ViModeController {
         this.contentDiv.insertBefore(newLineDiv, lineDiv);
         this.cursorPosition.col = 0;
         this.mode = "insert";
+      } else if (event.key === "0") {
+        this.cursorPosition.col = 0;
+      } else if (event.key === "$") {
+        const lineLength =
+          (this.contentDiv.children[this.cursorPosition.row] as HTMLDivElement)
+            .textContent?.length || 0;
+        this.cursorPosition.col = lineLength;
+      } else if (event.key === "x") {
+        const lineDiv = this.contentDiv.children[
+          this.cursorPosition.row
+        ] as HTMLDivElement;
+        const text = lineDiv.textContent || "";
+        lineDiv.textContent =
+          text.slice(0, this.cursorPosition.col) +
+          text.slice(this.cursorPosition.col + 1);
+        this.cursorPosition.col = Math.min(
+          this.cursorPosition.col,
+          lineDiv.textContent.length,
+        );
+      } else if (event.key === "D") {
+        const lineDiv = this.contentDiv.children[
+          this.cursorPosition.row
+        ] as HTMLDivElement;
+        const text = lineDiv.textContent || "";
+        lineDiv.textContent = text.slice(0, this.cursorPosition.col);
       } else if (event.key === "h") {
         this.cursorPosition.col = Math.max(0, this.cursorPosition.col - 1);
       } else if (event.key === "l") {

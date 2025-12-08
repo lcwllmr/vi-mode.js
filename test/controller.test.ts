@@ -83,6 +83,14 @@ test("cursor movement in normal mode", () => {
   expect(cursorPos).toEqual({ row: 1, col: 1 });
 });
 
+test("cursor movement to line ends in normal mode", () => {
+  const [document, controller] = makeTestSetup("ABCD\nEFGH\n", "normal", 1, 1);
+  simulateKeys(document, controller, [{ key: "0" }]);
+  expect(controller.getCursorPosition()).toEqual({ row: 1, col: 0 });
+  simulateKeys(document, controller, [{ key: "$" }]);
+  expect(controller.getCursorPosition()).toEqual({ row: 1, col: 4 });
+});
+
 test("mode switching works correctly", () => {
   const [document, controller] = makeTestSetup("ABC", "normal", 0, 0);
   expect(controller.getMode()).toBe("normal");
@@ -188,4 +196,27 @@ test("tab key inserts spaces", () => {
   expect(content).toBe("Hello    World");
   const cursorPos = controller.getCursorPosition();
   expect(cursorPos).toEqual({ row: 0, col: 9 });
+});
+
+test("single character deletions in normal mode", () => {
+  const [document, controller] = makeTestSetup("ABCDE", "normal", 0, 3);
+  simulateKeys(document, controller, [{ key: "x" }]);
+  expect(controller.extractContent()).toBe("ABCE");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
+  simulateKeys(document, controller, [{ key: "x" }]);
+  expect(controller.extractContent()).toBe("ABC");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
+  simulateKeys(document, controller, [{ key: "x" }]);
+  expect(controller.extractContent()).toBe("ABC");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 3 });
+});
+
+test("deleting to end of line in normal mode", () => {
+  const [document, controller] = makeTestSetup("01234", "normal", 0, 2);
+  simulateKeys(document, controller, [{ key: "D" }]);
+  expect(controller.extractContent()).toBe("01");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 2 });
+  simulateKeys(document, controller, [{ key: "D" }]);
+  expect(controller.extractContent()).toBe("01");
+  expect(controller.getCursorPosition()).toEqual({ row: 0, col: 2 });
 });
