@@ -28,7 +28,7 @@
     "format:check": "prettier . --check --end-of-line=auto"
   },
   "simple-git-hooks": {
-    "pre-commit": "npm run format:check"
+    "pre-commit": "npm run format:check && npm run lint"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
