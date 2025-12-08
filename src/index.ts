@@ -5,6 +5,12 @@ export interface CursorPosition {
   col: number;
 }
 
+interface EditorSnapshot {
+  content: string;
+  cursor: CursorPosition;
+  mode: Mode;
+}
+
 interface EditorState {
   mode: Mode;
   cursor: CursorState;
@@ -39,6 +45,15 @@ class EditorBuffer {
       lines.push((lineDiv as HTMLDivElement).textContent || "");
     }
     return lines.join("\n");
+  }
+
+  public replaceContent(content: string): void {
+    while (this.contentDiv.firstChild) {
+      this.contentDiv.removeChild(this.contentDiv.firstChild);
+    }
+    for (const line of content.split("\n")) {
+      this.contentDiv.appendChild(this.makeLineDiv(line));
+    }
   }
 
   public lineCount(): number {
@@ -110,6 +125,11 @@ class CursorState {
     this.clampToBuffer(buffer);
   }
 
+  public setFromSnapshot(position: CursorPosition, buffer: EditorBuffer): void {
+    this.position = { ...position };
+    this.clampToBuffer(buffer);
+  }
+
   public moveLeft(): void {
     this.position.col = Math.max(0, this.position.col - 1);
   }
@@ -141,9 +161,23 @@ class CursorState {
 }
 
 class CommandExecutor {
-  constructor(private state: EditorState) {}
+  constructor(
+    private state: EditorState,
+    private undoManager: UndoManager,
+  ) {}
 
-  public run(command: Command, event: KeyboardEvent): void {
+  public run(
+    command: Command,
+    event: KeyboardEvent,
+    { recordUndo }: { recordUndo: boolean },
+  ): void {
+    if (recordUndo) {
+      const snapshot = this.undoManager.createSnapshot(this.state);
+      command(this.state, event);
+      this.undoManager.recordChange(snapshot, this.state);
+      return;
+    }
+
     command(this.state, event);
   }
 }
@@ -156,8 +190,9 @@ class KeyMapper {
   ) {}
 
   public resolve(state: EditorState, event: KeyboardEvent): Command | null {
+    const key = this.makeKey(event);
     const map = state.mode === "normal" ? this.normalKeymap : this.insertKeymap;
-    const command = map.get(event.key);
+    const command = map.get(key);
     if (command) return command;
 
     if (state.mode === "insert" && event.key.length === 1) {
@@ -166,9 +201,72 @@ class KeyMapper {
 
     return null;
   }
+
+  private makeKey(event: KeyboardEvent): string {
+    const modifiers: string[] = [];
+    if (event.ctrlKey) modifiers.push("Ctrl");
+    if (event.altKey) modifiers.push("Alt");
+    if (event.metaKey) modifiers.push("Meta");
+    modifiers.push(event.key);
+    return modifiers.join("+");
+  }
 }
 
-const createNormalKeymap = (): Map<string, Command> => {
+class UndoManager {
+  private undoStack: EditorSnapshot[] = [];
+  private redoStack: EditorSnapshot[] = [];
+
+  public createSnapshot(state: EditorState): EditorSnapshot {
+    return {
+      content: state.buffer.extractContent(),
+      cursor: state.cursor.getPosition(),
+      mode: state.mode,
+    };
+  }
+
+  public recordChange(
+    previousSnapshot: EditorSnapshot,
+    state: EditorState,
+  ): void {
+    const currentContent = state.buffer.extractContent();
+    if (previousSnapshot.content !== currentContent) {
+      this.undoStack.push(previousSnapshot);
+      this.redoStack = [];
+    }
+  }
+
+  public undo(state: EditorState): boolean {
+    const snapshot = this.undoStack.pop();
+    if (!snapshot) return false;
+    const currentSnapshot = this.createSnapshot(state);
+    this.redoStack.push(currentSnapshot);
+    this.applySnapshot(state, snapshot);
+    return true;
+  }
+
+  public redo(state: EditorState): boolean {
+    const snapshot = this.redoStack.pop();
+    if (!snapshot) return false;
+    const currentSnapshot = this.createSnapshot(state);
+    this.undoStack.push(currentSnapshot);
+    this.applySnapshot(state, snapshot);
+    return true;
+  }
+
+  private applySnapshot(state: EditorState, snapshot: EditorSnapshot): void {
+    state.buffer.replaceContent(snapshot.content);
+    state.mode = snapshot.mode;
+    state.cursor.setFromSnapshot(snapshot.cursor, state.buffer);
+  }
+}
+
+const createNormalKeymap = (
+  undoManager: UndoManager,
+): {
+  keymap: Map<string, Command>;
+  undoCommand: Command;
+  redoCommand: Command;
+} => {
   const keymap = new Map<string, Command>();
 
   keymap.set("i", (state) => {
@@ -243,7 +341,24 @@ const createNormalKeymap = (): Map<string, Command> => {
     state.cursor.moveUp(state.buffer);
   });
 
-  return keymap;
+  const undoCommand: Command = (state, event) => {
+    event.preventDefault();
+    if (undoManager.undo(state)) {
+      state.mode = "normal";
+    }
+  };
+
+  const redoCommand: Command = (state, event) => {
+    event.preventDefault();
+    if (undoManager.redo(state)) {
+      state.mode = "normal";
+    }
+  };
+
+  keymap.set("u", undoCommand);
+  keymap.set("Ctrl+r", redoCommand);
+
+  return { keymap, undoCommand, redoCommand };
 };
 
 const createInsertKeymap = (): Map<string, Command> => {
@@ -316,6 +431,9 @@ export class ViModeController {
   private state: EditorState;
   private keyMapper: KeyMapper;
   private executor: CommandExecutor;
+  private undoManager: UndoManager;
+  private undoCommand: Command;
+  private redoCommand: Command;
 
   constructor(
     container: HTMLDivElement,
@@ -335,6 +453,7 @@ export class ViModeController {
       this.textareaDiv,
       initialContent,
     );
+
     const cursor = new CursorState(initialCursorRow, initialCursorCol);
     cursor.clampToBuffer(buffer);
 
@@ -351,12 +470,18 @@ export class ViModeController {
     this.cursorSpan.style.width = "1ch";
     this.cursorSpan.style.height = "1em";
 
+    this.undoManager = new UndoManager();
+    const { keymap, undoCommand, redoCommand } = createNormalKeymap(
+      this.undoManager,
+    );
+    this.undoCommand = undoCommand;
+    this.redoCommand = redoCommand;
     this.keyMapper = new KeyMapper(
-      createNormalKeymap(),
+      keymap,
       createInsertKeymap(),
       insertTextCommand,
     );
-    this.executor = new CommandExecutor(this.state);
+    this.executor = new CommandExecutor(this.state, this.undoManager);
 
     this.updateCursorSpan();
   }
@@ -376,7 +501,9 @@ export class ViModeController {
   public processKeyboardEvent(event: KeyboardEvent) {
     const command = this.keyMapper.resolve(this.state, event);
     if (command) {
-      this.executor.run(command, event);
+      const isUndo = command === this.undoCommand;
+      const isRedo = command === this.redoCommand;
+      this.executor.run(command, event, { recordUndo: !isUndo && !isRedo });
     }
     this.state.cursor.clampToBuffer(this.state.buffer);
     this.updateCursorSpan();
