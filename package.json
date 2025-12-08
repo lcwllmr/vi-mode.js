@@ -1,7 +1,11 @@
 {
   "name": "vi-mode",
   "version": "0.2.0",
-  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lcwllmr/vi-mode.js"
+  },
+  "description": "lightweight vi-like editor component for the web",
   "keywords": [],
   "author": "Luca Wellmeier",
   "license": "MIT",
