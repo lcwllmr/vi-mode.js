@@ -23,6 +23,7 @@
     "coverage": "vitest run --coverage",
     "dev": "vite demo",
     "build:demo": "vite build demo --outDir dist",
+    "lint": "eslint .",
     "format": "prettier . --write --end-of-line=auto",
     "format:check": "prettier . --check --end-of-line=auto"
   },
@@ -30,12 +31,15 @@
     "pre-commit": "npm run format:check"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
     "@types/jsdom": "^27.0.0",
     "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.1",
     "jsdom": "^27.2.0",
     "prettier": "^3.7.4",
     "simple-git-hooks": "^2.13.1",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.49.0",
     "vite": "^7.2.6",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.0.15"
