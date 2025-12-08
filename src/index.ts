@@ -222,6 +222,10 @@ class NormalModeCommandResolver {
   ) {}
 
   public resolve(event: KeyboardEvent): ResolvedCommand | null {
+    if (this.isPureModifier(event.key)) {
+      return null;
+    }
+
     if (this.isDigit(event.key)) {
       if (this.shouldTreatZeroAsMotion(event.key)) {
         return this.resolveMotionKey("0");
@@ -400,6 +404,12 @@ class NormalModeCommandResolver {
     const parsed = this.countBuffer === "" ? NaN : Number(this.countBuffer);
     this.countBuffer = "";
     return Number.isNaN(parsed) ? 1 : parsed;
+  }
+
+  private isPureModifier(key: string | undefined): boolean {
+    return (
+      key === "Shift" || key === "Control" || key === "Alt" || key === "Meta"
+    );
   }
 
   private resetPending(): void {
