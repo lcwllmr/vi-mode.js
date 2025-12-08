@@ -18,10 +18,11 @@
     "coverage": "vitest run --coverage",
     "dev": "vite demo",
     "build:demo": "vite build demo --outDir dist",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "format:check": "prettier . --check"
   },
   "simple-git-hooks": {
-    "pre-commit": "npm run format"
+    "pre-commit": "npm run format:check"
   },
   "devDependencies": {
     "@types/jsdom": "^27.0.0",
