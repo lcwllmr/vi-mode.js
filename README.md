@@ -1,5 +1,13 @@
 # `vi-mode.js`: lightweight vi-like editor component for the web
 
+Setup for local development: clone the repo and `cd` into it, then run:
+
+```bash
+npm ci
+npx simple-git-hooks
+npm run dev # starts local dev server for live demo
+```
+
 ## Roadmap and Changelog
 
 Planned features for the next releases (sorted after priority):
