@@ -19,6 +19,35 @@ interface EditorState {
 
 type Command = (state: EditorState, event: KeyboardEvent) => void;
 
+interface ResolvedCommand {
+  command: Command;
+  isUndo?: boolean;
+  isRedo?: boolean;
+}
+
+type MotionRange =
+  | { type: "line"; startRow: number; endRow: number }
+  | { type: "character"; row: number; startCol: number; endCol: number };
+
+interface MotionDefinition {
+  key: string;
+  move: (state: EditorState, count: number) => void;
+  toRange: (state: EditorState, count: number) => MotionRange;
+}
+
+const clampNumber = (value: number, min: number, max: number): number => {
+  return Math.min(Math.max(value, min), max);
+};
+
+const makeKey = (event: KeyboardEvent): string => {
+  const modifiers: string[] = [];
+  if (event.ctrlKey) modifiers.push("Ctrl");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.metaKey) modifiers.push("Meta");
+  modifiers.push(event.key);
+  return modifiers.join("+");
+};
+
 class EditorBuffer {
   private document: Document;
   private container: HTMLDivElement;
@@ -182,33 +211,227 @@ class CommandExecutor {
   }
 }
 
+class NormalModeCommandResolver {
+  private countBuffer = "";
+  private pendingOperator: "delete" | null = null;
+
+  constructor(
+    private motions: Map<string, MotionDefinition>,
+    private normalCommands: Map<string, Command>,
+    private undoManager: UndoManager,
+  ) {}
+
+  public resolve(event: KeyboardEvent): ResolvedCommand | null {
+    if (this.isDigit(event.key)) {
+      if (this.shouldTreatZeroAsMotion(event.key)) {
+        return this.resolveMotionKey("0");
+      }
+      this.countBuffer += event.key;
+      return null;
+    }
+
+    const key = makeKey(event);
+
+    if (key === "d") {
+      if (this.pendingOperator === "delete") {
+        const count = this.consumeCountOrOne();
+        this.pendingOperator = null;
+        return { command: this.buildDeleteLinesCommand(count) };
+      }
+      this.pendingOperator = "delete";
+      return null;
+    }
+
+    if (key === "u") {
+      const count = this.consumeCountOrOne();
+      this.pendingOperator = null;
+      return { command: this.buildUndoCommand(count), isUndo: true };
+    }
+
+    if (key === "Ctrl+r") {
+      const count = this.consumeCountOrOne();
+      this.pendingOperator = null;
+      return { command: this.buildRedoCommand(count), isRedo: true };
+    }
+
+    const motionResult = this.resolveMotionKey(key);
+    if (motionResult) return motionResult;
+
+    const command = this.normalCommands.get(key);
+    if (command) {
+      this.resetPending();
+      return { command };
+    }
+
+    this.resetPending();
+    return null;
+  }
+
+  private resolveMotionKey(key: string): ResolvedCommand | null {
+    const motion = this.motions.get(key);
+    if (!motion) return null;
+    const count = this.consumeCountOrOne();
+    const operator = this.pendingOperator;
+    this.pendingOperator = null;
+    if (operator === "delete") {
+      return { command: this.buildDeleteWithMotionCommand(motion, count) };
+    }
+    return { command: this.buildMotionCommand(motion, count) };
+  }
+
+  private buildMotionCommand(motion: MotionDefinition, count: number): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state) => {
+      motion.move(state, normalizedCount);
+    };
+  }
+
+  private buildDeleteWithMotionCommand(
+    motion: MotionDefinition,
+    count: number,
+  ): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state) => {
+      const range = motion.toRange(state, normalizedCount);
+      if (range.type === "line") {
+        this.deleteLineRange(state, range.startRow, range.endRow);
+      } else {
+        this.deleteCharacterRange(
+          state,
+          range.row,
+          range.startCol,
+          range.endCol,
+        );
+      }
+    };
+  }
+
+  private buildDeleteLinesCommand(count: number): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state) => {
+      const { row } = state.cursor.getPosition();
+      const endRow = clampNumber(
+        row + normalizedCount - 1,
+        0,
+        state.buffer.lineCount() - 1,
+      );
+      this.deleteLineRange(state, row, endRow);
+    };
+  }
+
+  private buildUndoCommand(count: number): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state, event) => {
+      event.preventDefault();
+      for (let i = 0; i < normalizedCount; i += 1) {
+        if (!this.undoManager.undo(state)) break;
+      }
+      state.mode = "normal";
+    };
+  }
+
+  private buildRedoCommand(count: number): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state, event) => {
+      event.preventDefault();
+      for (let i = 0; i < normalizedCount; i += 1) {
+        if (!this.undoManager.redo(state)) break;
+      }
+      state.mode = "normal";
+    };
+  }
+
+  private deleteLineRange(
+    state: EditorState,
+    startRow: number,
+    endRow: number,
+  ): void {
+    const normalizedStart = Math.max(0, Math.min(startRow, endRow));
+    const normalizedEnd = clampNumber(
+      Math.max(startRow, endRow),
+      normalizedStart,
+      state.buffer.lineCount() - 1,
+    );
+    for (let i = normalizedStart; i <= normalizedEnd; i += 1) {
+      state.buffer.removeLine(normalizedStart);
+    }
+    if (state.buffer.lineCount() === 0) {
+      state.buffer.replaceContent("");
+    }
+    const targetRow = clampNumber(
+      normalizedStart,
+      0,
+      state.buffer.lineCount() - 1,
+    );
+    const currentCol = state.cursor.getPosition().col;
+    const targetCol = Math.min(
+      currentCol,
+      state.buffer.getLineLength(targetRow),
+    );
+    state.cursor.setPosition(targetRow, targetCol, state.buffer);
+  }
+
+  private deleteCharacterRange(
+    state: EditorState,
+    row: number,
+    startCol: number,
+    endCol: number,
+  ): void {
+    const lineText = state.buffer.getLineText(row);
+    const clampedStart = clampNumber(startCol, 0, lineText.length);
+    const clampedEnd = clampNumber(endCol, clampedStart, lineText.length);
+    if (clampedStart === clampedEnd) return;
+    const updated =
+      lineText.slice(0, clampedStart) + lineText.slice(clampedEnd);
+    state.buffer.setLineText(row, updated);
+    state.cursor.setPosition(row, clampedStart, state.buffer);
+  }
+
+  private shouldTreatZeroAsMotion(key: string): boolean {
+    if (key !== "0") return false;
+    return this.countBuffer === "";
+  }
+
+  private isDigit(key: string | undefined): key is string {
+    return !!key && /^[0-9]$/.test(key);
+  }
+
+  private consumeCountOrOne(): number {
+    const parsed = this.countBuffer === "" ? NaN : Number(this.countBuffer);
+    this.countBuffer = "";
+    return Number.isNaN(parsed) ? 1 : parsed;
+  }
+
+  private resetPending(): void {
+    this.countBuffer = "";
+    this.pendingOperator = null;
+  }
+}
+
 class KeyMapper {
   constructor(
-    private normalKeymap: Map<string, Command>,
+    private normalResolver: NormalModeCommandResolver,
     private insertKeymap: Map<string, Command>,
     private insertTextCommand: Command,
   ) {}
 
-  public resolve(state: EditorState, event: KeyboardEvent): Command | null {
-    const key = this.makeKey(event);
-    const map = state.mode === "normal" ? this.normalKeymap : this.insertKeymap;
-    const command = map.get(key);
-    if (command) return command;
+  public resolve(
+    state: EditorState,
+    event: KeyboardEvent,
+  ): ResolvedCommand | null {
+    if (state.mode === "normal") {
+      return this.normalResolver.resolve(event);
+    }
+
+    const key = makeKey(event);
+    const command = this.insertKeymap.get(key);
+    if (command) return { command };
 
     if (state.mode === "insert" && event.key.length === 1) {
-      return this.insertTextCommand;
+      return { command: this.insertTextCommand };
     }
 
     return null;
-  }
-
-  private makeKey(event: KeyboardEvent): string {
-    const modifiers: string[] = [];
-    if (event.ctrlKey) modifiers.push("Ctrl");
-    if (event.altKey) modifiers.push("Alt");
-    if (event.metaKey) modifiers.push("Meta");
-    modifiers.push(event.key);
-    return modifiers.join("+");
   }
 }
 
@@ -277,52 +500,149 @@ class UndoManager {
   }
 }
 
+const createMotions = (): Map<string, MotionDefinition> => {
+  const motions = new Map<string, MotionDefinition>();
+
+  motions.set("h", {
+    key: "h",
+    move: (state, count) => {
+      const { row, col } = state.cursor.getPosition();
+      const targetCol = Math.max(0, col - Math.max(1, count));
+      state.cursor.setPosition(row, targetCol, state.buffer);
+    },
+    toRange: (state, count) => {
+      const { row, col } = state.cursor.getPosition();
+      const delta = Math.max(1, count);
+      const targetCol = Math.max(0, col - delta);
+      return { type: "character", row, startCol: targetCol, endCol: col };
+    },
+  });
+
+  motions.set("l", {
+    key: "l",
+    move: (state, count) => {
+      const { row, col } = state.cursor.getPosition();
+      const lineLength = state.buffer.getLineLength(row);
+      const targetCol = Math.min(lineLength, col + Math.max(1, count));
+      state.cursor.setPosition(row, targetCol, state.buffer);
+    },
+    toRange: (state, count) => {
+      const { row, col } = state.cursor.getPosition();
+      const step = Math.max(1, count);
+      const lineLength = state.buffer.getLineLength(row);
+      const targetCol = Math.min(lineLength, col + step);
+      return { type: "character", row, startCol: col, endCol: targetCol };
+    },
+  });
+
+  motions.set("j", {
+    key: "j",
+    move: (state, count) => {
+      const { row, col } = state.cursor.getPosition();
+      const targetRow = clampNumber(
+        row + Math.max(1, count),
+        0,
+        state.buffer.lineCount() - 1,
+      );
+      state.cursor.setPosition(targetRow, col, state.buffer);
+    },
+    toRange: (state, count) => {
+      const { row } = state.cursor.getPosition();
+      const lastRow = state.buffer.lineCount() - 1;
+      const endRow = clampNumber(row + Math.max(1, count) - 1, 0, lastRow);
+      return { type: "line", startRow: row, endRow };
+    },
+  });
+
+  motions.set("k", {
+    key: "k",
+    move: (state, count) => {
+      const { row, col } = state.cursor.getPosition();
+      const targetRow = clampNumber(
+        row - Math.max(1, count),
+        0,
+        state.buffer.lineCount() - 1,
+      );
+      state.cursor.setPosition(targetRow, col, state.buffer);
+    },
+    toRange: (state, count) => {
+      const { row } = state.cursor.getPosition();
+      const startRow = clampNumber(row - (Math.max(1, count) - 1), 0, row);
+      return { type: "line", startRow, endRow: row };
+    },
+  });
+
+  motions.set("0", {
+    key: "0",
+    move: (state) => {
+      const { row } = state.cursor.getPosition();
+      state.cursor.setPosition(row, 0, state.buffer);
+    },
+    toRange: (state) => {
+      const { row, col } = state.cursor.getPosition();
+      return { type: "character", row, startCol: 0, endCol: col };
+    },
+  });
+
+  motions.set("$", {
+    key: "$",
+    move: (state) => {
+      const { row } = state.cursor.getPosition();
+      state.cursor.setPosition(
+        row,
+        state.buffer.getLineLength(row),
+        state.buffer,
+      );
+    },
+    toRange: (state) => {
+      const { row, col } = state.cursor.getPosition();
+      const lineLength = state.buffer.getLineLength(row);
+      return { type: "character", row, startCol: col, endCol: lineLength };
+    },
+  });
+
+  return motions;
+};
+
 const createNormalKeymap = (
   undoManager: UndoManager,
 ): {
-  keymap: Map<string, Command>;
+  motions: Map<string, MotionDefinition>;
+  normalCommands: Map<string, Command>;
   undoCommand: Command;
   redoCommand: Command;
 } => {
-  const keymap = new Map<string, Command>();
+  const normalCommands = new Map<string, Command>();
 
-  keymap.set("i", (state) => {
+  normalCommands.set("i", (state) => {
     state.mode = "insert";
   });
 
-  keymap.set("a", (state) => {
+  normalCommands.set("a", (state) => {
     state.cursor.moveRight(state.buffer);
     state.mode = "insert";
   });
 
-  keymap.set("A", (state) => {
+  normalCommands.set("A", (state) => {
     state.cursor.moveToLineEnd(state.buffer);
     state.mode = "insert";
   });
 
-  keymap.set("o", (state) => {
+  normalCommands.set("o", (state) => {
     const { row } = state.cursor.getPosition();
     state.buffer.insertLineAfter(row, "");
     state.cursor.setPosition(row + 1, 0, state.buffer);
     state.mode = "insert";
   });
 
-  keymap.set("O", (state) => {
+  normalCommands.set("O", (state) => {
     const { row } = state.cursor.getPosition();
     state.buffer.insertLineBefore(row, "");
     state.cursor.setPosition(row, 0, state.buffer);
     state.mode = "insert";
   });
 
-  keymap.set("0", (state) => {
-    state.cursor.moveToLineStart();
-  });
-
-  keymap.set("$", (state) => {
-    state.cursor.moveToLineEnd(state.buffer);
-  });
-
-  keymap.set("x", (state) => {
+  normalCommands.set("x", (state) => {
     const { row, col } = state.cursor.getPosition();
     const text = state.buffer.getLineText(row);
     const lineCount = state.buffer.lineCount();
@@ -336,26 +656,10 @@ const createNormalKeymap = (
     }
   });
 
-  keymap.set("D", (state) => {
+  normalCommands.set("D", (state) => {
     const { row, col } = state.cursor.getPosition();
     const text = state.buffer.getLineText(row);
     state.buffer.setLineText(row, text.slice(0, col));
-  });
-
-  keymap.set("h", (state) => {
-    state.cursor.moveLeft();
-  });
-
-  keymap.set("l", (state) => {
-    state.cursor.moveRight(state.buffer);
-  });
-
-  keymap.set("j", (state) => {
-    state.cursor.moveDown(state.buffer);
-  });
-
-  keymap.set("k", (state) => {
-    state.cursor.moveUp(state.buffer);
   });
 
   const undoCommand: Command = (state, event) => {
@@ -372,10 +676,12 @@ const createNormalKeymap = (
     }
   };
 
-  keymap.set("u", undoCommand);
-  keymap.set("Ctrl+r", redoCommand);
-
-  return { keymap, undoCommand, redoCommand };
+  return {
+    motions: createMotions(),
+    normalCommands,
+    undoCommand,
+    redoCommand,
+  };
 };
 
 const createInsertKeymap = (): Map<string, Command> => {
@@ -488,13 +794,17 @@ export class ViModeController {
     this.cursorSpan.style.height = "1em";
 
     this.undoManager = new UndoManager();
-    const { keymap, undoCommand, redoCommand } = createNormalKeymap(
+    const { motions, normalCommands, undoCommand, redoCommand } =
+      createNormalKeymap(this.undoManager);
+    const normalResolver = new NormalModeCommandResolver(
+      motions,
+      normalCommands,
       this.undoManager,
     );
     this.undoCommand = undoCommand;
     this.redoCommand = redoCommand;
     this.keyMapper = new KeyMapper(
-      keymap,
+      normalResolver,
       createInsertKeymap(),
       insertTextCommand,
     );
@@ -516,7 +826,8 @@ export class ViModeController {
   }
 
   public processKeyboardEvent(event: KeyboardEvent) {
-    const command = this.keyMapper.resolve(this.state, event);
+    const resolved = this.keyMapper.resolve(this.state, event);
+    const command = resolved?.command;
     if (command) {
       const wasInsertMode = this.state.mode === "insert";
 
@@ -524,8 +835,8 @@ export class ViModeController {
         this.undoManager.beginCompound(this.state);
       }
 
-      const isUndo = command === this.undoCommand;
-      const isRedo = command === this.redoCommand;
+      const isUndo = resolved?.isUndo ?? command === this.undoCommand;
+      const isRedo = resolved?.isRedo ?? command === this.redoCommand;
       const recordUndo =
         !isUndo && !isRedo && !this.undoManager.hasPendingCompound();
 
