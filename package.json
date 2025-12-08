@@ -5,8 +5,15 @@
   "keywords": [],
   "author": "Luca Wellmeier",
   "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "main": "dist/vi-mode.cjs",
+  "module": "dist/vi-mode.js",
+  "types": "dist/vi-mode.d.ts",
   "scripts": {
-    "prepare": "tsc && vite build",
+    "prepare": "vite build",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "dev": "vite demo",
@@ -24,6 +31,7 @@
     "simple-git-hooks": "^2.13.1",
     "typescript": "^5.9.3",
     "vite": "^7.2.6",
+    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.0.15"
   }
 }

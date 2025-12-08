@@ -1,13 +1,13 @@
 import { defineConfig } from "vite";
+import dts from "vite-plugin-dts";
 
 export default defineConfig({
   build: {
     lib: {
       entry: "src/index.ts",
       name: "vi-mode",
-      fileName: () => "vi-mode.js",
-      formats: ["umd"],
+      formats: ["es", "cjs"],
     },
-    minify: "esbuild",
   },
+  plugins: [dts({ rollupTypes: true })],
 });
