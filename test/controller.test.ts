@@ -35,7 +35,7 @@ function simulateKeys(
 ) {
   for (const keyEvent of keySeq) {
     if (keyEvent.key) {
-      const event = new document.defaultView!.KeyboardEvent("keydown", {
+      const event = new KeyboardEvent("keydown", {
         key: keyEvent.key,
         ctrlKey: keyEvent.ctrl || false,
         altKey: keyEvent.alt || false,
@@ -46,7 +46,7 @@ function simulateKeys(
       controller.processKeyboardEvent(event);
     } else if (keyEvent.text) {
       for (const char of keyEvent.text) {
-        const event = new document.defaultView!.KeyboardEvent("keydown", {
+        const event = new KeyboardEvent("keydown", {
           key: char,
           bubbles: true,
           cancelable: true,
