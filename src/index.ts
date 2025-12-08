@@ -219,6 +219,9 @@ export class ViModeController {
           text.slice(this.cursorPosition.col);
         this.cursorPosition.col += 4;
       } else {
+        // ignore non-character keys
+        if (event.key.length !== 1) return;
+
         const lineDiv = this.contentDiv.children[
           this.cursorPosition.row
         ] as HTMLDivElement;
