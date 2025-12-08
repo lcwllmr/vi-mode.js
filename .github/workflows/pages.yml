@@ -19,7 +19,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run demo:build
+      - run: npm run build:demo
       - run: npm run test:coverage
       - uses: actions/upload-pages-artifact@v3
         with:
