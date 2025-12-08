@@ -33,7 +33,7 @@ Planned features for upcoming releases:
 
 `v0.2.1`: tiny fixes
 
-- [ ] fix behavior of `x` at end of line
+- [x] fix behavior of `x` at end of line
 - [x] apply thorough linting
 
 `v0.2.0`: a few more commands
