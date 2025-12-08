@@ -1,0 +1,29 @@
+{
+  "name": "vi-mode",
+  "version": "0.1.0",
+  "description": "",
+  "keywords": [],
+  "author": "Luca Wellmeier",
+  "license": "MIT",
+  "scripts": {
+    "prepare": "tsc && vite build",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "dev": "vite demo",
+    "build:demo": "vite build demo --outDir dist",
+    "format": "prettier --write ."
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npm run format"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^27.0.0",
+    "@vitest/coverage-v8": "^4.0.15",
+    "jsdom": "^27.2.0",
+    "prettier": "^3.7.4",
+    "simple-git-hooks": "^2.13.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6",
+    "vitest": "^4.0.15"
+  }
+}
