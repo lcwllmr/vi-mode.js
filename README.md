@@ -20,10 +20,10 @@ Planned features for upcoming releases:
 
 `v0.4.0`: visual mode
 
-- [ ] visual mode via `v` and `V` with all motions we have so far
-- [ ] external register store (reusable across sessions)
+- [ ] visual mode via `v` and `V` with all supported motions we have so far
+- [ ] a single internal register for yanked and deleted text
 - [ ] yank and paste commands in normal (`yy`, `y[motion]`, `p`, `P`) and visual mode (`y`)
-- [ ] system clipboard support
+- [ ] delete commands in visual mode `d[motion]`
 
 `v0.3.0`: architecture overhaul
 
