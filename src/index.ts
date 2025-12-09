@@ -1,20 +1,27 @@
-export type Mode = "insert" | "normal";
+export type Mode = "insert" | "normal" | "visual-character" | "visual-line";
 
 export interface CursorPosition {
   row: number;
   col: number;
 }
 
+interface VisualSelection {
+  type: "character" | "line";
+  anchor: CursorPosition;
+}
+
 interface EditorSnapshot {
   content: string;
   cursor: CursorPosition;
   mode: Mode;
+  selection: VisualSelection | null;
 }
 
 interface EditorState {
   mode: Mode;
   cursor: CursorState;
   buffer: EditorBuffer;
+  selection: VisualSelection | null;
 }
 
 type Command = (state: EditorState, event: KeyboardEvent) => void;
@@ -33,6 +40,12 @@ interface MotionDefinition {
   key: string;
   move: (state: EditorState, count: number) => void;
   toRange: (state: EditorState, count: number) => MotionRange;
+}
+
+interface SelectionSegment {
+  row: number;
+  startCol: number;
+  endCol: number;
 }
 
 const clampNumber = (value: number, min: number, max: number): number => {
@@ -59,6 +72,8 @@ class EditorBuffer {
     this.contentDiv = this.container.appendChild(
       this.document.createElement("div"),
     );
+    this.contentDiv.style.position = "relative";
+    this.contentDiv.style.zIndex = "1";
     for (const line of content.split("\n")) {
       this.contentDiv.appendChild(this.makeLineDiv(line));
     }
@@ -208,6 +223,74 @@ class CommandExecutor {
     }
 
     command(this.state, event);
+  }
+}
+
+class VisualModeCommandResolver {
+  private countBuffer = "";
+
+  constructor(
+    private motions: Map<string, MotionDefinition>,
+    private exitCommand: Command,
+  ) {}
+
+  public resolve(event: KeyboardEvent): ResolvedCommand | null {
+    if (this.isPureModifier(event.key)) return null;
+
+    if (this.isDigit(event.key)) {
+      if (this.shouldTreatZeroAsMotion(event.key)) {
+        return this.resolveMotionKey("0");
+      }
+      this.countBuffer += event.key;
+      return null;
+    }
+
+    const key = makeKey(event);
+    if (key === "Escape") {
+      this.countBuffer = "";
+      return { command: this.exitCommand };
+    }
+
+    const motion = this.resolveMotionKey(key);
+    if (motion) return motion;
+
+    this.countBuffer = "";
+    return null;
+  }
+
+  private resolveMotionKey(key: string): ResolvedCommand | null {
+    const motion = this.motions.get(key);
+    if (!motion) return null;
+    const count = this.consumeCountOrOne();
+    return { command: this.buildMotionCommand(motion, count) };
+  }
+
+  private buildMotionCommand(motion: MotionDefinition, count: number): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state) => {
+      motion.move(state, normalizedCount);
+    };
+  }
+
+  private consumeCountOrOne(): number {
+    const parsed = this.countBuffer === "" ? NaN : Number(this.countBuffer);
+    this.countBuffer = "";
+    return Number.isNaN(parsed) ? 1 : parsed;
+  }
+
+  private shouldTreatZeroAsMotion(key: string): boolean {
+    if (key !== "0") return false;
+    return this.countBuffer === "";
+  }
+
+  private isDigit(key: string | undefined): key is string {
+    return !!key && /^[0-9]$/.test(key);
+  }
+
+  private isPureModifier(key: string | undefined): boolean {
+    return (
+      key === "Shift" || key === "Control" || key === "Alt" || key === "Meta"
+    );
   }
 }
 
@@ -421,6 +504,7 @@ class NormalModeCommandResolver {
 class KeyMapper {
   constructor(
     private normalResolver: NormalModeCommandResolver,
+    private visualResolver: VisualModeCommandResolver,
     private insertKeymap: Map<string, Command>,
     private insertTextCommand: Command,
   ) {}
@@ -431,6 +515,10 @@ class KeyMapper {
   ): ResolvedCommand | null {
     if (state.mode === "normal") {
       return this.normalResolver.resolve(event);
+    }
+
+    if (state.mode === "visual-character" || state.mode === "visual-line") {
+      return this.visualResolver.resolve(event);
     }
 
     const key = makeKey(event);
@@ -455,6 +543,7 @@ class UndoManager {
       content: state.buffer.extractContent(),
       cursor: state.cursor.getPosition(),
       mode: state.mode,
+      selection: state.selection ? { ...state.selection } : null,
     };
   }
 
@@ -506,6 +595,7 @@ class UndoManager {
   private applySnapshot(state: EditorState, snapshot: EditorSnapshot): void {
     state.buffer.replaceContent(snapshot.content);
     state.mode = snapshot.mode;
+    state.selection = snapshot.selection ? { ...snapshot.selection } : null;
     state.cursor.setFromSnapshot(snapshot.cursor, state.buffer);
   }
 }
@@ -675,6 +765,22 @@ const createNormalKeymap = (
     state.buffer.setLineText(row, text.slice(0, col));
   });
 
+  normalCommands.set("v", (state) => {
+    state.selection = {
+      type: "character",
+      anchor: state.cursor.getPosition(),
+    };
+    state.mode = "visual-character";
+  });
+
+  normalCommands.set("V", (state) => {
+    state.selection = {
+      type: "line",
+      anchor: state.cursor.getPosition(),
+    };
+    state.mode = "visual-line";
+  });
+
   const undoCommand: Command = (state, event) => {
     event.preventDefault();
     if (undoManager.undo(state)) {
@@ -703,6 +809,7 @@ const createInsertKeymap = (): Map<string, Command> => {
   keymap.set("Escape", (state, event) => {
     event.preventDefault();
     state.cursor.clampToBuffer(state.buffer);
+    state.selection = null;
     state.mode = "normal";
   });
 
@@ -763,6 +870,7 @@ const insertTextCommand: Command = (state, event) => {
 export class ViModeController {
   private document: Document;
   private textareaDiv: HTMLDivElement;
+  private selectionOverlay: HTMLDivElement;
   private cursorSpan: HTMLSpanElement;
   private state: EditorState;
   private keyMapper: KeyMapper;
@@ -797,7 +905,19 @@ export class ViModeController {
       mode: initialMode,
       cursor,
       buffer,
+      selection: null,
     };
+
+    this.selectionOverlay = this.textareaDiv.appendChild(
+      this.document.createElement("div"),
+    );
+    this.selectionOverlay.style.position = "absolute";
+    this.selectionOverlay.style.top = "0";
+    this.selectionOverlay.style.left = "0";
+    this.selectionOverlay.style.right = "0";
+    this.selectionOverlay.style.bottom = "0";
+    this.selectionOverlay.style.pointerEvents = "none";
+    this.selectionOverlay.style.zIndex = "0";
 
     this.cursorSpan = this.textareaDiv.appendChild(
       this.document.createElement("span"),
@@ -805,6 +925,7 @@ export class ViModeController {
     this.cursorSpan.style.position = "absolute";
     this.cursorSpan.style.width = "1ch";
     this.cursorSpan.style.height = "1em";
+    this.cursorSpan.style.zIndex = "2";
 
     this.undoManager = new UndoManager();
     const { motions, normalCommands, undoCommand, redoCommand } =
@@ -816,13 +937,24 @@ export class ViModeController {
     );
     this.undoCommand = undoCommand;
     this.redoCommand = redoCommand;
+    const exitVisualCommand: Command = (state, event) => {
+      event.preventDefault();
+      state.selection = null;
+      state.mode = "normal";
+    };
+    const visualResolver = new VisualModeCommandResolver(
+      motions,
+      exitVisualCommand,
+    );
     this.keyMapper = new KeyMapper(
       normalResolver,
+      visualResolver,
       createInsertKeymap(),
       insertTextCommand,
     );
     this.executor = new CommandExecutor(this.state, this.undoManager);
 
+    this.updateSelectionOverlay();
     this.updateCursorSpan();
   }
 
@@ -832,6 +964,19 @@ export class ViModeController {
 
   public getCursorPosition(): CursorPosition {
     return this.state.cursor.getPosition();
+  }
+
+  public getSelection(): {
+    type: "character" | "line";
+    anchor: CursorPosition;
+    head: CursorPosition;
+  } | null {
+    if (!this.state.selection) return null;
+    return {
+      type: this.state.selection.type,
+      anchor: { ...this.state.selection.anchor },
+      head: this.state.cursor.getPosition(),
+    };
   }
 
   public extractContent(): string {
@@ -860,12 +1005,101 @@ export class ViModeController {
       }
     }
     this.state.cursor.clampToBuffer(this.state.buffer);
+    this.updateSelectionOverlay();
     this.updateCursorSpan();
   }
 
   private shouldStartInsertSession(event: KeyboardEvent): boolean {
     if (this.state.mode !== "normal") return false;
     return ["i", "a", "A", "o", "O"].includes(event.key);
+  }
+
+  private isVisualMode(): boolean {
+    return (
+      this.state.mode === "visual-character" ||
+      this.state.mode === "visual-line"
+    );
+  }
+
+  private updateSelectionOverlay(): void {
+    this.selectionOverlay.replaceChildren();
+    if (!this.isVisualMode() || !this.state.selection) return;
+    const segments = this.calculateSelectionSegments();
+    for (const segment of segments) {
+      const block = this.document.createElement("div");
+      block.style.position = "absolute";
+      block.style.top = `${segment.row}em`;
+      block.style.left = `${segment.startCol}ch`;
+      block.style.width = `${Math.max(1, segment.endCol - segment.startCol)}ch`;
+      block.style.height = "1em";
+      block.style.backgroundColor = "rgba(0, 0, 255, 0.2)";
+      block.style.pointerEvents = "none";
+      this.selectionOverlay.appendChild(block);
+    }
+  }
+
+  private calculateSelectionSegments(): SelectionSegment[] {
+    const selection = this.state.selection;
+    if (!selection) return [];
+    const anchor = selection.anchor;
+    const head = this.state.cursor.getPosition();
+    if (selection.type === "line") {
+      const startRow = Math.min(anchor.row, head.row);
+      const endRow = Math.max(anchor.row, head.row);
+      const segments: SelectionSegment[] = [];
+      for (let row = startRow; row <= endRow; row += 1) {
+        segments.push({
+          row,
+          startCol: 0,
+          endCol: this.safeLineLength(row),
+        });
+      }
+      return segments;
+    }
+
+    if (anchor.row === head.row) {
+      const startCol = Math.min(anchor.col, head.col);
+      const endCol = Math.max(anchor.col, head.col) + 1;
+      return [
+        {
+          row: anchor.row,
+          startCol,
+          endCol,
+        },
+      ];
+    }
+
+    const anchorIsTop = anchor.row < head.row;
+    const top = anchorIsTop ? anchor : head;
+    const bottom = anchorIsTop ? head : anchor;
+    const segments: SelectionSegment[] = [];
+    segments.push({
+      row: top.row,
+      startCol: top.col,
+      endCol: Math.max(top.col + 1, this.safeLineLength(top.row)),
+    });
+    for (let row = top.row + 1; row < bottom.row; row += 1) {
+      segments.push({
+        row,
+        startCol: 0,
+        endCol: this.safeLineLength(row),
+      });
+    }
+    segments.push({
+      row: bottom.row,
+      startCol: 0,
+      endCol: bottom.col + 1,
+    });
+
+    return segments.map((segment) => ({
+      ...segment,
+      endCol: Math.max(segment.startCol + 1, segment.endCol),
+    }));
+  }
+
+  private safeLineLength(row: number): number {
+    const len = this.state.buffer.getLineLength(row);
+    return Math.max(1, len);
   }
 
   private updateCursorSpan() {
@@ -875,6 +1109,11 @@ export class ViModeController {
     this.cursorSpan.style.left = `${col}ch`;
     if (this.state.mode === "normal") {
       this.cursorSpan.style.backgroundColor = "blue";
+      this.cursorSpan.style.color = "white";
+      this.cursorSpan.style.border = "none";
+      this.cursorSpan.textContent = lineDiv.textContent?.charAt(col) || " ";
+    } else if (this.isVisualMode()) {
+      this.cursorSpan.style.backgroundColor = "rgba(0, 0, 255, 0.4)";
       this.cursorSpan.style.color = "white";
       this.cursorSpan.style.border = "none";
       this.cursorSpan.textContent = lineDiv.textContent?.charAt(col) || " ";
