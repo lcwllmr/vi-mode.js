@@ -17,13 +17,15 @@ Planned features for upcoming releases:
 
 - deal with horizontal and vertical scrolling
 - configuration options (like colors and tab size)
+- change commands in normal mode `c[motion]`, `cc`
+- word based motions `w`, `b`, `e`
 
 `v0.4.0`: visual mode
 
-- [ ] visual mode via `v` and `V` with all supported motions we have so far
-- [ ] a single internal register for yanked and deleted text
-- [ ] yank and paste commands in normal (`yy`, `y[motion]`, `p`, `P`) and visual mode (`y`)
-- [ ] delete commands in visual mode `d[motion]`
+- [x] visual mode via `v` and `V` with all supported motions we have so far
+- [x] a single internal register for yanked and deleted text
+- [x] delete commands in normal mode `d[motion]` copy to that register
+- [x] yank and paste commands in normal (`yy`, `y[motion]`, `p`, `P`) and visual mode (`y`)
 
 `v0.3.0`: architecture overhaul
 
