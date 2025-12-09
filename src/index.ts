@@ -326,6 +326,7 @@ class NormalModeCommandResolver {
     private motions: Map<string, MotionDefinition>,
     private normalCommands: Map<string, Command>,
     private undoManager: UndoManager,
+    private setRegister: (text: string) => void,
   ) {}
 
   public resolve(event: KeyboardEvent): ResolvedCommand | null {
@@ -463,6 +464,11 @@ class NormalModeCommandResolver {
       normalizedStart,
       state.buffer.lineCount() - 1,
     );
+    const lines: string[] = [];
+    for (let i = normalizedStart; i <= normalizedEnd; i += 1) {
+      lines.push(state.buffer.getLineText(i));
+    }
+    this.setRegister(`${lines.join("\n")}\n`);
     for (let i = normalizedStart; i <= normalizedEnd; i += 1) {
       state.buffer.removeLine(normalizedStart);
     }
@@ -492,6 +498,7 @@ class NormalModeCommandResolver {
     const clampedStart = clampNumber(startCol, 0, lineText.length);
     const clampedEnd = clampNumber(endCol, clampedStart, lineText.length);
     if (clampedStart === clampedEnd) return;
+    this.setRegister(lineText.slice(clampedStart, clampedEnd));
     const updated =
       lineText.slice(0, clampedStart) + lineText.slice(clampedEnd);
     state.buffer.setLineText(row, updated);
@@ -954,11 +961,12 @@ export class ViModeController {
 
     this.undoManager = new UndoManager();
     const { motions, normalCommands, undoCommand, redoCommand } =
-      createNormalKeymap(this.undoManager);
+      createNormalKeymap(this.undoManager, (text) => this.setRegister(text));
     const normalResolver = new NormalModeCommandResolver(
       motions,
       normalCommands,
       this.undoManager,
+      (text) => this.setRegister(text),
     );
     this.undoCommand = undoCommand;
     this.redoCommand = redoCommand;
@@ -1032,6 +1040,10 @@ export class ViModeController {
 
   public extractContent(): string {
     return this.state.buffer.extractContent();
+  }
+
+  private setRegister(text: string): void {
+    this.register = text;
   }
 
   /** test-only helper */

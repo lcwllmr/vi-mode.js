@@ -76,3 +76,19 @@ test("characterwise delete across a line works with paste", () => {
   simulateKeys(controller, [{ key: "j" }, { key: "0" }, { key: "p" }]);
   expect(controller.extractContent()).toBe("a\nebcdfg");
 });
+
+test("dd stores deleted line in register for paste", () => {
+  const controller = makeController("one\ntwo\nthree", 0, 0);
+  simulateKeys(controller, [{ key: "d" }, { key: "d" }]);
+  expect(controller.extractContent()).toBe("two\nthree");
+  simulateKeys(controller, [{ key: "P" }]);
+  expect(controller.extractContent()).toBe("one\ntwo\nthree");
+});
+
+test("d$ stores deleted characters for paste", () => {
+  const controller = makeController("abcd", 0, 1);
+  simulateKeys(controller, [{ key: "d" }, { key: "$" }]);
+  expect(controller.extractContent()).toBe("a");
+  simulateKeys(controller, [{ key: "p" }]);
+  expect(controller.extractContent()).toBe("abcd");
+});
