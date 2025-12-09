@@ -320,7 +320,7 @@ class VisualModeCommandResolver {
 
 class NormalModeCommandResolver {
   private countBuffer = "";
-  private pendingOperator: "delete" | null = null;
+  private pendingOperator: "delete" | "yank" | null = null;
 
   constructor(
     private motions: Map<string, MotionDefinition>,
@@ -351,6 +351,16 @@ class NormalModeCommandResolver {
         return { command: this.buildDeleteLinesCommand(count) };
       }
       this.pendingOperator = "delete";
+      return null;
+    }
+
+    if (key === "y") {
+      if (this.pendingOperator === "yank") {
+        const count = this.consumeCountOrOne();
+        this.pendingOperator = null;
+        return { command: this.buildYankLinesCommand(count) };
+      }
+      this.pendingOperator = "yank";
       return null;
     }
 
@@ -388,6 +398,9 @@ class NormalModeCommandResolver {
     if (operator === "delete") {
       return { command: this.buildDeleteWithMotionCommand(motion, count) };
     }
+    if (operator === "yank") {
+      return { command: this.buildYankWithMotionCommand(motion, count) };
+    }
     return { command: this.buildMotionCommand(motion, count) };
   }
 
@@ -418,6 +431,21 @@ class NormalModeCommandResolver {
     };
   }
 
+  private buildYankWithMotionCommand(
+    motion: MotionDefinition,
+    count: number,
+  ): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state) => {
+      const range = motion.toRange(state, normalizedCount);
+      if (range.type === "line") {
+        this.yankLineRange(state, range.startRow, range.endRow);
+      } else {
+        this.yankCharacterRange(state, range.row, range.startCol, range.endCol);
+      }
+    };
+  }
+
   private buildDeleteLinesCommand(count: number): Command {
     const normalizedCount = Math.max(1, count);
     return (state) => {
@@ -428,6 +456,19 @@ class NormalModeCommandResolver {
         state.buffer.lineCount() - 1,
       );
       this.deleteLineRange(state, row, endRow);
+    };
+  }
+
+  private buildYankLinesCommand(count: number): Command {
+    const normalizedCount = Math.max(1, count);
+    return (state) => {
+      const { row } = state.cursor.getPosition();
+      const endRow = clampNumber(
+        row + normalizedCount - 1,
+        0,
+        state.buffer.lineCount() - 1,
+      );
+      this.yankLineRange(state, row, endRow);
     };
   }
 
@@ -488,6 +529,24 @@ class NormalModeCommandResolver {
     state.cursor.setPosition(targetRow, targetCol, state.buffer);
   }
 
+  private yankLineRange(
+    state: EditorState,
+    startRow: number,
+    endRow: number,
+  ): void {
+    const normalizedStart = Math.max(0, Math.min(startRow, endRow));
+    const normalizedEnd = clampNumber(
+      Math.max(startRow, endRow),
+      normalizedStart,
+      state.buffer.lineCount() - 1,
+    );
+    const lines: string[] = [];
+    for (let i = normalizedStart; i <= normalizedEnd; i += 1) {
+      lines.push(state.buffer.getLineText(i));
+    }
+    this.setRegister(`${lines.join("\n")}\n`);
+  }
+
   private deleteCharacterRange(
     state: EditorState,
     row: number,
@@ -503,6 +562,19 @@ class NormalModeCommandResolver {
       lineText.slice(0, clampedStart) + lineText.slice(clampedEnd);
     state.buffer.setLineText(row, updated);
     state.cursor.setPosition(row, clampedStart, state.buffer);
+  }
+
+  private yankCharacterRange(
+    state: EditorState,
+    row: number,
+    startCol: number,
+    endCol: number,
+  ): void {
+    const lineText = state.buffer.getLineText(row);
+    const clampedStart = clampNumber(startCol, 0, lineText.length);
+    const clampedEnd = clampNumber(endCol, clampedStart, lineText.length);
+    if (clampedStart === clampedEnd) return;
+    this.setRegister(lineText.slice(clampedStart, clampedEnd));
   }
 
   private shouldTreatZeroAsMotion(key: string): boolean {
