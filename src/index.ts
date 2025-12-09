@@ -983,6 +983,11 @@ export class ViModeController {
     return this.state.buffer.extractContent();
   }
 
+  /** test-only helper */
+  public __getSelectionSegmentsForTest(): SelectionSegment[] {
+    return this.calculateSelectionSegments();
+  }
+
   public processKeyboardEvent(event: KeyboardEvent) {
     const resolved = this.keyMapper.resolve(this.state, event);
     const command = resolved?.command;
@@ -1099,7 +1104,8 @@ export class ViModeController {
 
   private safeLineLength(row: number): number {
     const len = this.state.buffer.getLineLength(row);
-    return Math.max(1, len);
+    const hasTrailingNewline = row < this.state.buffer.lineCount() - 1;
+    return Math.max(1, len + (hasTrailingNewline ? 1 : 0));
   }
 
   private updateCursorSpan() {

@@ -92,3 +92,11 @@ test("character visual selections span multiple lines", () => {
     head: { row: 1, col: 2 },
   });
 });
+
+test("selection past end of line includes trailing newline column", () => {
+  const controller = makeController("abc\ndef", 0, 3);
+  simulateKeys(controller, [{ key: "v" }, { key: "j" }]);
+
+  const segments = controller.__getSelectionSegmentsForTest();
+  expect(segments[0]).toEqual({ row: 0, startCol: 3, endCol: 4 });
+});
