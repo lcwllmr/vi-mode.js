@@ -54,9 +54,13 @@ Planned features for upcoming releases:
 - change commands in normal mode `c[motion]`, `cc`
 - word based motions `w`, `b`, `e`
 
-`v0.5.0`:
+`v0.5.0`: api overhaul
 
-- [x] expose keyboard handling pieces so they can drive non-editor contexts (e.g. notebook cell navigation a la Jupyter)
+- [x] expose keyboard handling pieces and abstract buffer adapter so that the controller can drive non-editor contexts (e.g. notebook cell navigation a la Jupyter)
+- [ ] add jupyter-style notebook demo
+- [ ] improve CI and docs
+- [ ] reach 100% test coverage
+- [ ] reduce code complexity where possible
 
 `v0.4.0`: visual mode
 
