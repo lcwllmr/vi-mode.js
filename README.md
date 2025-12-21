@@ -1,5 +1,7 @@
 # `vi-mode.js`: lightweight vi-like editor component for the web
 
+[![npm version](https://img.shields.io/npm/v/vi-mode.svg)](https://www.npmjs.com/package/vi-mode)
+
 Setup for local development: clone the repo and `cd` into it, then run:
 
 ```bash
