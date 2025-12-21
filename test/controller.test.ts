@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 import { JSDOM } from "jsdom";
-import { ViModeController } from "../src";
+import { createFullEditor, ViModeController } from "../src";
 
 function makeTestSetup(
   initialText: string,
@@ -12,13 +12,12 @@ function makeTestSetup(
   const editorDiv = dom.window.document.getElementById(
     "editor",
   ) as HTMLDivElement;
-  const controller = new ViModeController(
-    editorDiv,
-    initialText,
+  const { controller } = createFullEditor(editorDiv, {
+    initialContent: initialText,
     initialMode,
     initialCursorRow,
     initialCursorCol,
-  );
+  });
   return controller;
 }
 

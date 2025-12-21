@@ -5,6 +5,18 @@ export interface CursorPosition {
   col: number;
 }
 
+export interface BufferAdapter {
+  extractContent(): string;
+  replaceContent(content: string): void;
+  lineCount(): number;
+  getLineText(row: number): string;
+  getLineLength(row: number): number;
+  setLineText(row: number, text: string): void;
+  insertLineAfter(row: number, text: string): void;
+  insertLineBefore(row: number, text: string): void;
+  removeLine(row: number): void;
+}
+
 interface VisualSelection {
   type: "character" | "line";
   anchor: CursorPosition;
@@ -17,32 +29,35 @@ interface EditorSnapshot {
   selection: VisualSelection | null;
 }
 
-interface EditorState {
+export interface EditorState<TBuffer extends BufferAdapter = BufferAdapter> {
   mode: Mode;
   cursor: CursorState;
-  buffer: EditorBuffer;
+  buffer: TBuffer;
   selection: VisualSelection | null;
 }
 
-type Command = (state: EditorState, event: KeyboardEvent) => void;
+export type Command<TState extends EditorState = EditorState> = (
+  state: TState,
+  event: KeyboardEvent,
+) => void;
 
-interface ResolvedCommand {
-  command: Command;
+export interface ResolvedCommand<TState extends EditorState = EditorState> {
+  command: Command<TState>;
   isUndo?: boolean;
   isRedo?: boolean;
 }
 
-type MotionRange =
+export type MotionRange =
   | { type: "line"; startRow: number; endRow: number }
   | { type: "character"; row: number; startCol: number; endCol: number };
 
-interface MotionDefinition {
+export interface MotionDefinition<TState extends EditorState = EditorState> {
   key: string;
-  move: (state: EditorState, count: number) => void;
-  toRange: (state: EditorState, count: number) => MotionRange;
+  move: (state: TState, count: number) => void;
+  toRange: (state: TState, count: number) => MotionRange;
 }
 
-interface SelectionSegment {
+export interface SelectionSegment {
   row: number;
   startCol: number;
   endCol: number;
@@ -56,7 +71,7 @@ interface CharacterSelectionRange {
   endCol: number;
 }
 
-type NormalizedSelectionRange =
+export type NormalizedSelectionRange =
   | { type: "line"; startRow: number; endRow: number }
   | CharacterSelectionRange;
 
@@ -73,7 +88,7 @@ const makeKey = (event: KeyboardEvent): string => {
   return modifiers.join("+");
 };
 
-class EditorBuffer {
+export class EditorBuffer implements BufferAdapter {
   private document: Document;
   private container: HTMLDivElement;
   private contentDiv: HTMLDivElement;
@@ -157,7 +172,7 @@ class EditorBuffer {
   }
 }
 
-class CursorState {
+export class CursorState {
   private position: CursorPosition;
 
   constructor(row: number, col: number) {
@@ -168,7 +183,7 @@ class CursorState {
     return { ...this.position };
   }
 
-  public clampToBuffer(buffer: EditorBuffer): void {
+  public clampToBuffer(buffer: BufferAdapter): void {
     const maxRow = Math.max(0, buffer.lineCount() - 1);
     const clampedRow = Math.min(Math.max(this.position.row, 0), maxRow);
     const lineLength = buffer.getLineLength(clampedRow);
@@ -176,12 +191,15 @@ class CursorState {
     this.position = { row: clampedRow, col: clampedCol };
   }
 
-  public setPosition(row: number, col: number, buffer: EditorBuffer): void {
+  public setPosition(row: number, col: number, buffer: BufferAdapter): void {
     this.position = { row, col };
     this.clampToBuffer(buffer);
   }
 
-  public setFromSnapshot(position: CursorPosition, buffer: EditorBuffer): void {
+  public setFromSnapshot(
+    position: CursorPosition,
+    buffer: BufferAdapter,
+  ): void {
     this.position = { ...position };
     this.clampToBuffer(buffer);
   }
@@ -190,18 +208,18 @@ class CursorState {
     this.position.col = Math.max(0, this.position.col - 1);
   }
 
-  public moveRight(buffer: EditorBuffer): void {
+  public moveRight(buffer: BufferAdapter): void {
     const lineLength = buffer.getLineLength(this.position.row);
     this.position.col = Math.min(lineLength, this.position.col + 1);
   }
 
-  public moveUp(buffer: EditorBuffer): void {
+  public moveUp(buffer: BufferAdapter): void {
     this.position.row = Math.max(0, this.position.row - 1);
     const lineLength = buffer.getLineLength(this.position.row);
     this.position.col = Math.min(lineLength, this.position.col);
   }
 
-  public moveDown(buffer: EditorBuffer): void {
+  public moveDown(buffer: BufferAdapter): void {
     this.position.row = Math.min(buffer.lineCount() - 1, this.position.row + 1);
     const lineLength = buffer.getLineLength(this.position.row);
     this.position.col = Math.min(lineLength, this.position.col);
@@ -211,19 +229,26 @@ class CursorState {
     this.position.col = 0;
   }
 
-  public moveToLineEnd(buffer: EditorBuffer): void {
+  public moveToLineEnd(buffer: BufferAdapter): void {
     this.position.col = buffer.getLineLength(this.position.row);
   }
 }
 
-class CommandExecutor {
+export interface EditorDom {
+  root: HTMLDivElement;
+  buffer: EditorBuffer;
+  selectionOverlay: HTMLDivElement;
+  cursorSpan: HTMLSpanElement;
+}
+
+class CommandExecutor<TState extends EditorState = EditorState> {
   constructor(
-    private state: EditorState,
-    private undoManager: UndoManager,
+    private state: TState,
+    private undoManager: UndoManager<TState>,
   ) {}
 
   public run(
-    command: Command,
+    command: Command<TState>,
     event: KeyboardEvent,
     { recordUndo }: { recordUndo: boolean },
   ): void {
@@ -238,17 +263,19 @@ class CommandExecutor {
   }
 }
 
-class VisualModeCommandResolver {
+export class VisualModeCommandResolver<
+  TState extends EditorState = EditorState,
+> {
   private countBuffer = "";
 
   constructor(
-    private motions: Map<string, MotionDefinition>,
-    private exitCommand: Command,
-    private yankCommand: Command,
-    private deleteCommand: Command,
+    private motions: Map<string, MotionDefinition<TState>>,
+    private exitCommand: Command<TState>,
+    private yankCommand: Command<TState>,
+    private deleteCommand: Command<TState>,
   ) {}
 
-  public resolve(event: KeyboardEvent): ResolvedCommand | null {
+  public resolve(event: KeyboardEvent): ResolvedCommand<TState> | null {
     if (this.isPureModifier(event.key)) return null;
 
     if (this.isDigit(event.key)) {
@@ -282,14 +309,17 @@ class VisualModeCommandResolver {
     return null;
   }
 
-  private resolveMotionKey(key: string): ResolvedCommand | null {
+  private resolveMotionKey(key: string): ResolvedCommand<TState> | null {
     const motion = this.motions.get(key);
     if (!motion) return null;
     const count = this.consumeCountOrOne();
     return { command: this.buildMotionCommand(motion, count) };
   }
 
-  private buildMotionCommand(motion: MotionDefinition, count: number): Command {
+  private buildMotionCommand(
+    motion: MotionDefinition<TState>,
+    count: number,
+  ): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state) => {
       motion.move(state, normalizedCount);
@@ -318,18 +348,20 @@ class VisualModeCommandResolver {
   }
 }
 
-class NormalModeCommandResolver {
+export class NormalModeCommandResolver<
+  TState extends EditorState = EditorState,
+> {
   private countBuffer = "";
   private pendingOperator: "delete" | "yank" | null = null;
 
   constructor(
-    private motions: Map<string, MotionDefinition>,
-    private normalCommands: Map<string, Command>,
-    private undoManager: UndoManager,
+    private motions: Map<string, MotionDefinition<TState>>,
+    private normalCommands: Map<string, Command<TState>>,
+    private undoManager: UndoManager<TState>,
     private setRegister: (text: string) => void,
   ) {}
 
-  public resolve(event: KeyboardEvent): ResolvedCommand | null {
+  public resolve(event: KeyboardEvent): ResolvedCommand<TState> | null {
     if (this.isPureModifier(event.key)) {
       return null;
     }
@@ -389,7 +421,7 @@ class NormalModeCommandResolver {
     return null;
   }
 
-  private resolveMotionKey(key: string): ResolvedCommand | null {
+  private resolveMotionKey(key: string): ResolvedCommand<TState> | null {
     const motion = this.motions.get(key);
     if (!motion) return null;
     const count = this.consumeCountOrOne();
@@ -404,7 +436,10 @@ class NormalModeCommandResolver {
     return { command: this.buildMotionCommand(motion, count) };
   }
 
-  private buildMotionCommand(motion: MotionDefinition, count: number): Command {
+  private buildMotionCommand(
+    motion: MotionDefinition<TState>,
+    count: number,
+  ): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state) => {
       motion.move(state, normalizedCount);
@@ -412,9 +447,9 @@ class NormalModeCommandResolver {
   }
 
   private buildDeleteWithMotionCommand(
-    motion: MotionDefinition,
+    motion: MotionDefinition<TState>,
     count: number,
-  ): Command {
+  ): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state) => {
       const range = motion.toRange(state, normalizedCount);
@@ -432,9 +467,9 @@ class NormalModeCommandResolver {
   }
 
   private buildYankWithMotionCommand(
-    motion: MotionDefinition,
+    motion: MotionDefinition<TState>,
     count: number,
-  ): Command {
+  ): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state) => {
       const range = motion.toRange(state, normalizedCount);
@@ -446,7 +481,7 @@ class NormalModeCommandResolver {
     };
   }
 
-  private buildDeleteLinesCommand(count: number): Command {
+  private buildDeleteLinesCommand(count: number): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state) => {
       const { row } = state.cursor.getPosition();
@@ -459,7 +494,7 @@ class NormalModeCommandResolver {
     };
   }
 
-  private buildYankLinesCommand(count: number): Command {
+  private buildYankLinesCommand(count: number): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state) => {
       const { row } = state.cursor.getPosition();
@@ -472,7 +507,7 @@ class NormalModeCommandResolver {
     };
   }
 
-  private buildUndoCommand(count: number): Command {
+  private buildUndoCommand(count: number): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state, event) => {
       event.preventDefault();
@@ -483,7 +518,7 @@ class NormalModeCommandResolver {
     };
   }
 
-  private buildRedoCommand(count: number): Command {
+  private buildRedoCommand(count: number): Command<TState> {
     const normalizedCount = Math.max(1, count);
     return (state, event) => {
       event.preventDefault();
@@ -604,18 +639,24 @@ class NormalModeCommandResolver {
   }
 }
 
-class KeyMapper {
+export interface ModeCommandResolver<
+  TState extends EditorState<BufferAdapter>,
+> {
+  resolve(event: KeyboardEvent): ResolvedCommand<TState> | null;
+}
+
+export class KeyMapper<TState extends EditorState<BufferAdapter>> {
   constructor(
-    private normalResolver: NormalModeCommandResolver,
-    private visualResolver: VisualModeCommandResolver,
-    private insertKeymap: Map<string, Command>,
-    private insertTextCommand: Command,
+    private normalResolver: ModeCommandResolver<TState>,
+    private visualResolver: ModeCommandResolver<TState>,
+    private insertKeymap: Map<string, Command<TState>>,
+    private insertTextCommand: Command<TState>,
   ) {}
 
   public resolve(
-    state: EditorState,
+    state: TState,
     event: KeyboardEvent,
-  ): ResolvedCommand | null {
+  ): ResolvedCommand<TState> | null {
     if (state.mode === "normal") {
       return this.normalResolver.resolve(event);
     }
@@ -636,12 +677,12 @@ class KeyMapper {
   }
 }
 
-class UndoManager {
+export class UndoManager<TState extends EditorState = EditorState> {
   private undoStack: EditorSnapshot[] = [];
   private redoStack: EditorSnapshot[] = [];
   private pendingSnapshot: EditorSnapshot | null = null;
 
-  public createSnapshot(state: EditorState): EditorSnapshot {
+  public createSnapshot(state: TState): EditorSnapshot {
     return {
       content: state.buffer.extractContent(),
       cursor: state.cursor.getPosition(),
@@ -650,10 +691,7 @@ class UndoManager {
     };
   }
 
-  public recordChange(
-    previousSnapshot: EditorSnapshot,
-    state: EditorState,
-  ): void {
+  public recordChange(previousSnapshot: EditorSnapshot, state: TState): void {
     const currentContent = state.buffer.extractContent();
     if (previousSnapshot.content !== currentContent) {
       this.undoStack.push(previousSnapshot);
@@ -661,13 +699,13 @@ class UndoManager {
     }
   }
 
-  public beginCompound(state: EditorState): void {
+  public beginCompound(state: TState): void {
     if (!this.pendingSnapshot) {
       this.pendingSnapshot = this.createSnapshot(state);
     }
   }
 
-  public commitCompoundIfChanged(state: EditorState): void {
+  public commitCompoundIfChanged(state: TState): void {
     if (!this.pendingSnapshot) return;
     this.recordChange(this.pendingSnapshot, state);
     this.pendingSnapshot = null;
@@ -677,7 +715,7 @@ class UndoManager {
     return this.pendingSnapshot !== null;
   }
 
-  public undo(state: EditorState): boolean {
+  public undo(state: TState): boolean {
     const snapshot = this.undoStack.pop();
     if (!snapshot) return false;
     const currentSnapshot = this.createSnapshot(state);
@@ -686,7 +724,7 @@ class UndoManager {
     return true;
   }
 
-  public redo(state: EditorState): boolean {
+  public redo(state: TState): boolean {
     const snapshot = this.redoStack.pop();
     if (!snapshot) return false;
     const currentSnapshot = this.createSnapshot(state);
@@ -695,7 +733,7 @@ class UndoManager {
     return true;
   }
 
-  private applySnapshot(state: EditorState, snapshot: EditorSnapshot): void {
+  private applySnapshot(state: TState, snapshot: EditorSnapshot): void {
     state.buffer.replaceContent(snapshot.content);
     state.mode = snapshot.mode;
     state.selection = snapshot.selection ? { ...snapshot.selection } : null;
@@ -703,8 +741,11 @@ class UndoManager {
   }
 }
 
-const createMotions = (): Map<string, MotionDefinition> => {
-  const motions = new Map<string, MotionDefinition>();
+export const createMotions = <TState extends EditorState = EditorState>(): Map<
+  string,
+  MotionDefinition<TState>
+> => {
+  const motions = new Map<string, MotionDefinition<TState>>();
 
   motions.set("h", {
     key: "h",
@@ -810,15 +851,15 @@ const createMotions = (): Map<string, MotionDefinition> => {
   return motions;
 };
 
-const createNormalKeymap = (
-  undoManager: UndoManager,
+export const createNormalKeymap = <TState extends EditorState = EditorState>(
+  undoManager: UndoManager<TState>,
 ): {
-  motions: Map<string, MotionDefinition>;
-  normalCommands: Map<string, Command>;
-  undoCommand: Command;
-  redoCommand: Command;
+  motions: Map<string, MotionDefinition<TState>>;
+  normalCommands: Map<string, Command<TState>>;
+  undoCommand: Command<TState>;
+  redoCommand: Command<TState>;
 } => {
-  const normalCommands = new Map<string, Command>();
+  const normalCommands = new Map<string, Command<TState>>();
 
   normalCommands.set("i", (state) => {
     state.mode = "insert";
@@ -884,14 +925,14 @@ const createNormalKeymap = (
     state.mode = "visual-line";
   });
 
-  const undoCommand: Command = (state, event) => {
+  const undoCommand: Command<TState> = (state, event) => {
     event.preventDefault();
     if (undoManager.undo(state)) {
       state.mode = "normal";
     }
   };
 
-  const redoCommand: Command = (state, event) => {
+  const redoCommand: Command<TState> = (state, event) => {
     event.preventDefault();
     if (undoManager.redo(state)) {
       state.mode = "normal";
@@ -906,8 +947,10 @@ const createNormalKeymap = (
   };
 };
 
-const createInsertKeymap = (): Map<string, Command> => {
-  const keymap = new Map<string, Command>();
+export const createInsertKeymap = <
+  TState extends EditorState = EditorState,
+>(): Map<string, Command<TState>> => {
+  const keymap = new Map<string, Command<TState>>();
 
   keymap.set("Escape", (state, event) => {
     event.preventDefault();
@@ -962,12 +1005,114 @@ const createInsertKeymap = (): Map<string, Command> => {
   return keymap;
 };
 
-const insertTextCommand: Command = (state, event) => {
+export const insertTextCommand: Command = (state, event) => {
   const { row, col } = state.cursor.getPosition();
   const text = state.buffer.getLineText(row);
   const updated = text.slice(0, col) + event.key + text.slice(col);
   state.buffer.setLineText(row, updated);
   state.cursor.setPosition(row, col + 1, state.buffer);
+};
+
+export const initializeEditorDom = (
+  container: HTMLDivElement,
+  initialContent = "",
+): EditorDom => {
+  const document = container.ownerDocument;
+  const root = container.appendChild(document.createElement("div"));
+  root.style.position = "relative";
+
+  const buffer = new EditorBuffer(document, root, initialContent);
+
+  const selectionOverlay = root.appendChild(document.createElement("div"));
+  selectionOverlay.style.position = "absolute";
+  selectionOverlay.style.top = "0";
+  selectionOverlay.style.left = "0";
+  selectionOverlay.style.right = "0";
+  selectionOverlay.style.bottom = "0";
+  selectionOverlay.style.pointerEvents = "none";
+  selectionOverlay.style.zIndex = "0";
+
+  const cursorSpan = root.appendChild(document.createElement("span"));
+  cursorSpan.style.position = "absolute";
+  cursorSpan.style.width = "1ch";
+  cursorSpan.style.height = "1em";
+  cursorSpan.style.zIndex = "2";
+
+  return { root, buffer, selectionOverlay, cursorSpan };
+};
+
+export const createDefaultKeyMapper = <
+  TState extends EditorState = EditorState,
+>(
+  undoManager: UndoManager<TState>,
+  setRegister: (text: string) => void,
+  copySelectionToRegister: () => void,
+  getSelectionRange: () => NormalizedSelectionRange | null,
+  deleteSelectionInBuffer: (range: NormalizedSelectionRange) => void,
+  pasteFromRegister: (before: boolean) => void,
+  options?: {
+    extendNormalCommands?: (commands: Map<string, Command<TState>>) => void;
+  },
+): {
+  keyMapper: KeyMapper<TState>;
+  undoCommand: Command<TState>;
+  redoCommand: Command<TState>;
+} => {
+  const { motions, normalCommands, undoCommand, redoCommand } =
+    createNormalKeymap(undoManager);
+  options?.extendNormalCommands?.(normalCommands);
+  const normalResolver = new NormalModeCommandResolver<TState>(
+    motions,
+    normalCommands,
+    undoManager,
+    (text) => setRegister(text),
+  );
+  const exitVisualCommand: Command = (state, event) => {
+    event.preventDefault();
+    state.selection = null;
+    state.mode = "normal";
+  };
+  const yankVisualCommand: Command = (state, event) => {
+    event.preventDefault();
+    copySelectionToRegister();
+    state.selection = null;
+    state.mode = "normal";
+  };
+  const deleteVisualCommand: Command = (state, event) => {
+    event.preventDefault();
+    const range = getSelectionRange();
+    if (range) {
+      copySelectionToRegister();
+      deleteSelectionInBuffer(range);
+    }
+    state.selection = null;
+    state.mode = "normal";
+  };
+  const visualResolver = new VisualModeCommandResolver<TState>(
+    motions,
+    exitVisualCommand,
+    yankVisualCommand,
+    deleteVisualCommand,
+  );
+  normalCommands.set("p", (state) => {
+    pasteFromRegister(false);
+    state.mode = "normal";
+  });
+  normalCommands.set("P", (state) => {
+    pasteFromRegister(true);
+    state.mode = "normal";
+  });
+
+  return {
+    keyMapper: new KeyMapper<TState>(
+      normalResolver,
+      visualResolver,
+      createInsertKeymap<TState>(),
+      insertTextCommand as Command<TState>,
+    ),
+    undoCommand,
+    redoCommand,
+  };
 };
 
 export class ViModeController {
@@ -976,114 +1121,74 @@ export class ViModeController {
   private selectionOverlay: HTMLDivElement;
   private cursorSpan: HTMLSpanElement;
   private register = "";
-  private state: EditorState;
-  private keyMapper: KeyMapper;
-  private executor: CommandExecutor;
-  private undoManager: UndoManager;
-  private undoCommand: Command;
-  private redoCommand: Command;
+  private state: EditorState<EditorBuffer>;
+  private keyMapper: KeyMapper<EditorState<EditorBuffer>>;
+  private executor: CommandExecutor<EditorState<EditorBuffer>>;
+  private undoManager: UndoManager<EditorState<EditorBuffer>>;
+  private undoCommand: Command<EditorState<EditorBuffer>> | null;
+  private redoCommand: Command<EditorState<EditorBuffer>> | null;
 
-  constructor(
-    container: HTMLDivElement,
-    initialContent = "",
-    initialMode: Mode = "normal",
-    initialCursorRow = 0,
-    initialCursorCol = 0,
-  ) {
-    this.document = container.ownerDocument;
-    this.textareaDiv = container.appendChild(
-      this.document.createElement("div"),
-    );
-    this.textareaDiv.style.position = "relative";
+  constructor(options: {
+    dom: EditorDom;
+    initialMode?: Mode;
+    initialCursorRow?: number;
+    initialCursorCol?: number;
+    keyMapper?: KeyMapper<EditorState<EditorBuffer>>;
+    undoManager?: UndoManager<EditorState<EditorBuffer>>;
+    extendNormalCommands?: (
+      commands: Map<string, Command<EditorState<EditorBuffer>>>,
+    ) => void;
+  }) {
+    const {
+      dom,
+      initialMode = "normal",
+      initialCursorRow = 0,
+      initialCursorCol = 0,
+      keyMapper,
+      undoManager,
+    } = options;
 
-    const buffer = new EditorBuffer(
-      this.document,
-      this.textareaDiv,
-      initialContent,
-    );
+    this.document = dom.root.ownerDocument;
+    this.textareaDiv = dom.root;
+    this.selectionOverlay = dom.selectionOverlay;
+    this.cursorSpan = dom.cursorSpan;
 
     const cursor = new CursorState(initialCursorRow, initialCursorCol);
-    cursor.clampToBuffer(buffer);
+    cursor.clampToBuffer(dom.buffer);
 
     this.state = {
       mode: initialMode,
       cursor,
-      buffer,
+      buffer: dom.buffer,
       selection: null,
     };
 
-    this.selectionOverlay = this.textareaDiv.appendChild(
-      this.document.createElement("div"),
-    );
-    this.selectionOverlay.style.position = "absolute";
-    this.selectionOverlay.style.top = "0";
-    this.selectionOverlay.style.left = "0";
-    this.selectionOverlay.style.right = "0";
-    this.selectionOverlay.style.bottom = "0";
-    this.selectionOverlay.style.pointerEvents = "none";
-    this.selectionOverlay.style.zIndex = "0";
-
-    this.cursorSpan = this.textareaDiv.appendChild(
-      this.document.createElement("span"),
-    );
-    this.cursorSpan.style.position = "absolute";
-    this.cursorSpan.style.width = "1ch";
-    this.cursorSpan.style.height = "1em";
-    this.cursorSpan.style.zIndex = "2";
-
-    this.undoManager = new UndoManager();
-    const { motions, normalCommands, undoCommand, redoCommand } =
-      createNormalKeymap(this.undoManager, (text) => this.setRegister(text));
-    const normalResolver = new NormalModeCommandResolver(
-      motions,
-      normalCommands,
+    this.undoManager =
+      undoManager ?? new UndoManager<EditorState<EditorBuffer>>();
+    if (keyMapper) {
+      this.undoCommand = null;
+      this.redoCommand = null;
+      this.keyMapper = keyMapper;
+    } else {
+      const defaults = createDefaultKeyMapper<EditorState<EditorBuffer>>(
+        this.undoManager,
+        (text) => this.setRegister(text),
+        () => this.copySelectionToRegister(),
+        () => this.getSelectionRange(),
+        (range) => this.deleteSelectionInBuffer(range),
+        (before) => this.pasteFromRegister(before),
+        {
+          extendNormalCommands: options.extendNormalCommands,
+        },
+      );
+      this.keyMapper = defaults.keyMapper;
+      this.undoCommand = defaults.undoCommand;
+      this.redoCommand = defaults.redoCommand;
+    }
+    this.executor = new CommandExecutor<EditorState<EditorBuffer>>(
+      this.state,
       this.undoManager,
-      (text) => this.setRegister(text),
     );
-    this.undoCommand = undoCommand;
-    this.redoCommand = redoCommand;
-    const exitVisualCommand: Command = (state, event) => {
-      event.preventDefault();
-      state.selection = null;
-      state.mode = "normal";
-    };
-    const yankVisualCommand: Command = (state, event) => {
-      event.preventDefault();
-      this.copySelectionToRegister();
-      state.selection = null;
-      state.mode = "normal";
-    };
-    const deleteVisualCommand: Command = (state, event) => {
-      event.preventDefault();
-      const range = this.getSelectionRange();
-      if (range) {
-        this.copySelectionToRegister();
-        this.deleteSelectionInBuffer(range);
-      }
-      state.selection = null;
-      state.mode = "normal";
-    };
-    const visualResolver = new VisualModeCommandResolver(
-      motions,
-      exitVisualCommand,
-      yankVisualCommand,
-      deleteVisualCommand,
-    );
-    normalCommands.set("p", (state) => {
-      this.pasteFromRegister(false);
-      state.mode = "normal";
-    });
-    normalCommands.set("P", (state) => {
-      this.pasteFromRegister(true);
-      state.mode = "normal";
-    });
-    this.keyMapper = new KeyMapper(
-      normalResolver,
-      visualResolver,
-      createInsertKeymap(),
-      insertTextCommand,
-    );
-    this.executor = new CommandExecutor(this.state, this.undoManager);
 
     this.updateSelectionOverlay();
     this.updateCursorSpan();
@@ -1133,8 +1238,12 @@ export class ViModeController {
         this.undoManager.beginCompound(this.state);
       }
 
-      const isUndo = resolved?.isUndo ?? command === this.undoCommand;
-      const isRedo = resolved?.isRedo ?? command === this.redoCommand;
+      const isUndo =
+        resolved?.isUndo ??
+        (this.undoCommand !== null && command === this.undoCommand);
+      const isRedo =
+        resolved?.isRedo ??
+        (this.redoCommand !== null && command === this.redoCommand);
       const recordUndo =
         !isUndo && !isRedo && !this.undoManager.hasPendingCompound();
 
@@ -1441,3 +1550,26 @@ export class ViModeController {
     }
   }
 }
+
+export const createFullEditor = (
+  container: HTMLDivElement,
+  options?: {
+    initialContent?: string;
+    initialMode?: Mode;
+    initialCursorRow?: number;
+    initialCursorCol?: number;
+    keyMapper?: KeyMapper<EditorState>;
+    undoManager?: UndoManager;
+  },
+): { controller: ViModeController; dom: EditorDom } => {
+  const dom = initializeEditorDom(container, options?.initialContent ?? "");
+  const controller = new ViModeController({
+    dom,
+    initialMode: options?.initialMode,
+    initialCursorRow: options?.initialCursorRow,
+    initialCursorCol: options?.initialCursorCol,
+    keyMapper: options?.keyMapper,
+    undoManager: options?.undoManager,
+  });
+  return { controller, dom };
+};

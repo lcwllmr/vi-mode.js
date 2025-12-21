@@ -3,13 +3,44 @@
 Setup for local development: clone the repo and `cd` into it, then run:
 
 ```bash
-npm ci
+npm i
 npx simple-git-hooks
 
 # dev commands
 npm run dev # starts local dev server for live demo
 npm run test:watch # runs unit tests in watch mode
 ```
+
+## Usage
+
+Create the DOM nodes for the editor yourself and wire the keyboard handler explicitly:
+
+```ts
+import { initializeEditorDom, ViModeController } from "vi-mode";
+
+const container = document.getElementById("editor") as HTMLDivElement;
+const dom = initializeEditorDom(container, "Hello, world!");
+const controller = new ViModeController({ dom });
+
+container.addEventListener("keydown", (event) =>
+  controller.processKeyboardEvent(event),
+);
+```
+
+For a full-featured editor with the built-in keybindings, use the quickstart helper:
+
+```ts
+import { createFullEditor } from "vi-mode";
+
+const { controller, dom } = createFullEditor(container, {
+  initialContent: "Hello!",
+});
+container.addEventListener("keydown", (event) =>
+  controller.processKeyboardEvent(event),
+);
+```
+
+You can also build your own maps for normal/visual/insert mode using the exported building blocks (`KeyMapper`, `NormalModeCommandResolver`, `VisualModeCommandResolver`, `createMotions`, `createInsertKeymap`, `createDefaultKeyMapper`). Pass a custom `keyMapper` into `ViModeController` to enable or disable actions and wire keys to different consumers (e.g. let `Escape` exit insert mode while also handing control back to a parent notebook layout).
 
 ## Roadmap and Changelog
 
@@ -19,6 +50,10 @@ Planned features for upcoming releases:
 - configuration options (like colors and tab size)
 - change commands in normal mode `c[motion]`, `cc`
 - word based motions `w`, `b`, `e`
+
+`v0.5.0`:
+
+- [x] expose keyboard handling pieces so they can drive non-editor contexts (e.g. notebook cell navigation a la Jupyter)
 
 `v0.4.0`: visual mode
 

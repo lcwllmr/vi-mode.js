@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { JSDOM } from "jsdom";
-import { ViModeController } from "../src";
+import { createFullEditor, ViModeController } from "../src";
 
 interface FakeKeyboardEvent {
   key?: string;
@@ -17,7 +17,13 @@ function makeController(
   const editorDiv = dom.window.document.getElementById(
     "editor",
   ) as HTMLDivElement;
-  return new ViModeController(editorDiv, initialText, "normal", row, col);
+  const { controller } = createFullEditor(editorDiv, {
+    initialContent: initialText,
+    initialMode: "normal",
+    initialCursorRow: row,
+    initialCursorCol: col,
+  });
+  return controller;
 }
 
 function simulateKeys(
