@@ -4,8 +4,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     coverage: {
-      reporter: ["html"],
-      reportsDirectory: "./demo/dist/coverage",
+      provider: "v8",
     },
   },
 });
